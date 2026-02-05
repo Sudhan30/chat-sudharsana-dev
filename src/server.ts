@@ -144,14 +144,67 @@ const renderLayout = (content: string, title = "Chat") => `
     }
     .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
     .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+    /* Markdown content styling */
+    .message-content {
+      line-height: 1.6;
+    }
+    .message-content p {
+      margin-bottom: 0.75rem;
+    }
+    .message-content p:last-child {
+      margin-bottom: 0;
+    }
+    .message-content ul, .message-content ol {
+      margin: 0.5rem 0;
+      padding-left: 1.5rem;
+    }
+    .message-content li {
+      margin-bottom: 0.25rem;
+    }
+    .message-content strong {
+      font-weight: 600;
+      color: #f4f4f5;
+    }
+    .message-content em {
+      font-style: italic;
+      color: #d4d4d8;
+    }
     .message-content pre {
       background: #1e293b;
       padding: 1rem;
       border-radius: 0.5rem;
       overflow-x: auto;
+      margin: 0.75rem 0;
     }
     .message-content code {
       font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9em;
+    }
+    .message-content :not(pre) > code {
+      background: #334155;
+      padding: 0.15rem 0.4rem;
+      border-radius: 0.25rem;
+    }
+    .message-content h1, .message-content h2, .message-content h3 {
+      font-weight: 600;
+      margin-top: 1rem;
+      margin-bottom: 0.5rem;
+    }
+    .message-content hr {
+      border: none;
+      border-top: 1px solid #334155;
+      margin: 1rem 0;
+    }
+    .message-content blockquote {
+      border-left: 3px solid #3b82f6;
+      padding-left: 1rem;
+      margin: 0.75rem 0;
+      color: #a1a1aa;
+    }
+    /* Streaming text (before markdown render) */
+    .streaming-text {
+      white-space: pre-wrap;
     }
   </style>
 </head>
@@ -577,7 +630,7 @@ function appendMessage(role, content) {
         assistantDiv.innerHTML = \`
           <div class="w-8 h-8 rounded-full bg-green-600 flex items-center justify-center text-sm font-bold flex-shrink-0">AI</div>
           <div class="max-w-[70%] bg-dark-800 rounded-2xl rounded-tl-none px-4 py-3">
-            <div class="message-content whitespace-pre-wrap"></div>
+            <div class="message-content streaming-text"></div>
           </div>
         \`;
         messageContainer.appendChild(assistantDiv);
@@ -596,7 +649,7 @@ function appendMessage(role, content) {
             if (line.startsWith('data: ')) {
               try {
                 const data = JSON.parse(line.slice(6));
-                
+
                 // Handle metadata (search indicator)
                 if (data.type === 'meta' && data.search) {
                   const metaDiv = document.createElement('div');
@@ -604,7 +657,7 @@ function appendMessage(role, content) {
                   metaDiv.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg> Searched web for context';
                   contentDiv.parentElement.insertBefore(metaDiv, contentDiv.parentElement.firstChild);
                 }
-                
+
                 if (data.content) {
                   fullContent += data.content;
                   contentDiv.textContent = fullContent;
@@ -613,6 +666,14 @@ function appendMessage(role, content) {
               } catch {}
             }
           }
+        }
+
+        // After streaming completes, render markdown and clean up extra newlines
+        if (fullContent && marked && marked.parse) {
+          // Clean up excessive blank lines (more than 2 newlines -> 2 newlines)
+          const cleanedContent = fullContent.replace(/\\n{3,}/g, '\\n\\n').trim();
+          contentDiv.classList.remove('streaming-text');
+          contentDiv.innerHTML = marked.parse(cleanedContent);
         }
       } catch (err) {
         typingIndicator.classList.add('hidden');

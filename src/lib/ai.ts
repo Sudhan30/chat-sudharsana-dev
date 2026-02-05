@@ -398,12 +398,13 @@ WEB SEARCH: You have access to real-time web search results. When search results
 
 IMAGE ANALYSIS: You can analyze images. If the user sends an image, describe what you see in detail.
 
-RESPONSE FORMAT: Use markdown for better readability:
-- Use **bold** for emphasis
-- Use bullet points (- or *) for lists
-- Use code blocks with \`\`\` for code
-- Use proper paragraphs and line breaks
-Do NOT include raw URLs or markdown link syntax like [text](url) - just write naturally.`;
+RESPONSE FORMAT:
+- Use markdown: **bold**, *italic*, bullet lists, and code blocks
+- Keep responses concise and well-structured
+- Use single blank lines between paragraphs (never multiple blank lines)
+- Do NOT include raw URLs or markdown links like [text](url)
+- Do NOT add extra blank lines before or after lists
+- Start responses directly with content (no greeting every time)`;
 
   return prompt;
 }
