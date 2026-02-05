@@ -21,7 +21,7 @@ jobs:
   # Using self-hosted runner
   # ═══════════════════════════════════════════════════════════════════════════
   build:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
