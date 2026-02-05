@@ -634,6 +634,13 @@ function appendMessage(role, content) {
 
 app.get("/", (c) => c.redirect("/chat"));
 
+// Serve blog page
+app.get("/blog", async (c) => {
+  const file = Bun.file("./public/blog.html");
+  const content = await file.text();
+  return c.html(content);
+});
+
 app.get("/login", (c) => c.html(renderLogin()));
 
 app.post("/login", async (c) => {
