@@ -836,7 +836,11 @@ app.post("/api/chat", authMiddleware, async (c) => {
   let searchContext = "";
   if (shouldSearchWeb(message)) {
     console.log(`🔍 Performing web search for: ${message}`);
-    const results = await searchWeb(message, 5);
+    // Pass location to search for location-aware queries (weather, nearby, etc.)
+    const results = await searchWeb(message, 5, locationContext ? {
+      city: locationContext.city,
+      country: locationContext.country,
+    } : undefined);
     searchContext = formatSearchContext(results);
     if (searchContext) {
       console.log(`✅ Found ${results.length} search results`);

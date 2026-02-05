@@ -358,18 +358,47 @@ export function buildSystemPrompt(
   location?: LocationContext,
   hasSearchEnabled = true
 ): string {
-  let prompt = `You are a helpful, intelligent AI assistant. Be concise, accurate, and friendly. The user's name is ${userName}. Do not greet the user by name in every message - only use their name when it's contextually appropriate.`;
+  // Get current date in a clear format
+  const now = new Date();
+  const dateStr = now.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  const timeStr = now.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+
+  let prompt = `You are a helpful, intelligent AI assistant. Be concise, accurate, and friendly. The user's name is ${userName}. Do not greet the user by name in every message - only use their name when it's contextually appropriate.
+
+CURRENT DATE AND TIME: ${dateStr} at ${timeStr}
+This is the ACTUAL current date. Always use this date when asked about today's date, current day, or anything time-related. Do NOT make up or guess dates.`;
 
   if (location) {
-    prompt += `\n\nThe user's current location is: ${location.city || "Unknown city"}, ${location.country || "Unknown country"} (coordinates: ${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}). Use this precise location data when answering location-specific questions.`;
+    const cityInfo = location.city ? location.city : "Unknown city";
+    const countryInfo = location.country ? location.country : "Unknown country";
+    prompt += `
+
+USER'S LOCATION: ${cityInfo}, ${countryInfo}
+Coordinates: ${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}
+
+IMPORTANT: When the user asks about weather, local businesses, nearby places, or anything location-specific, use THIS location (${cityInfo}, ${countryInfo}) - NOT any other location. The user is physically located here right now.`;
   }
 
   if (hasSearchEnabled) {
-    prompt += `\n\nYou have access to real-time web search results. When search results are provided, use them to give accurate, up-to-date information. Do not include raw URLs in your responses.`;
+    prompt += `
+
+WEB SEARCH: You have access to real-time web search results. When search results are provided in the context, use them to give accurate, up-to-date information. Always prefer search results over your training data for current information. When searching for location-specific info like weather, ALWAYS use the user's actual location provided above.`;
   }
 
-  prompt += `\n\nYou can also analyze images. If the user sends an image, describe what you see in detail.`;
-  prompt += `\n\nIMPORTANT: Format your responses using markdown for better readability:
+  prompt += `
+
+IMAGE ANALYSIS: You can analyze images. If the user sends an image, describe what you see in detail.
+
+RESPONSE FORMAT: Use markdown for better readability:
 - Use **bold** for emphasis
 - Use bullet points (- or *) for lists
 - Use code blocks with \`\`\` for code

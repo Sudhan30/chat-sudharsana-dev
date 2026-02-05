@@ -24,18 +24,57 @@ export interface BraveSearchResponse {
     };
 }
 
+export interface LocationContext {
+    city?: string;
+    country?: string;
+}
+
+/**
+ * Enhance search query with location for location-specific queries
+ */
+function enhanceQueryWithLocation(query: string, location?: LocationContext): string {
+    if (!location?.city) return query;
+
+    const lowerQuery = query.toLowerCase();
+    const locationKeywords = [
+        "weather", "temperature", "forecast",
+        "restaurant", "food", "eat", "dining",
+        "store", "shop", "buy", "nearby",
+        "directions", "how to get", "route",
+        "open", "hours", "time",
+        "local", "near me", "around"
+    ];
+
+    // Check if query is location-sensitive
+    const needsLocation = locationKeywords.some(kw => lowerQuery.includes(kw));
+
+    if (needsLocation) {
+        // Add location to query if not already present
+        const locationStr = location.city + (location.country ? `, ${location.country}` : "");
+        if (!lowerQuery.includes(location.city.toLowerCase())) {
+            return `${query} in ${locationStr}`;
+        }
+    }
+
+    return query;
+}
+
 /**
  * Perform a web search using Brave Search API
  */
-export async function searchWeb(query: string, count = 5): Promise<SearchResult[]> {
+export async function searchWeb(query: string, count = 5, location?: LocationContext): Promise<SearchResult[]> {
     if (!BRAVE_API_KEY) {
         console.warn("Brave Search API key not configured");
         return [];
     }
 
+    // Enhance query with location for location-specific searches
+    const enhancedQuery = enhanceQueryWithLocation(query, location);
+    console.log(`🔍 Search query: "${query}" -> "${enhancedQuery}"`);
+
     try {
         const params = new URLSearchParams({
-            q: query,
+            q: enhancedQuery,
             count: count.toString(),
             text_decorations: "false",
             search_lang: "en",
