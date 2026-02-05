@@ -427,7 +427,7 @@ const renderChat = (user: User, sessions: any[], currentSessionId?: string) => r
           };
           // Try to get city/country from reverse geocoding
           try {
-            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&format=json`);
+            const res = await fetch(\`https://nominatim.openstreetmap.org/reverse?lat=\${pos.coords.latitude}&lon=\${pos.coords.longitude}&format=json\`);
             const data = await res.json();
 if (data.address) {
   userLocation.city = data.address.city || data.address.town || data.address.village;
@@ -475,7 +475,7 @@ async function loadMessages() {
   messageContainer.innerHTML = '';
 
   if (messages.length === 0) {
-    appendMessage('assistant', `Hello ${userName}! I am your AI assistant. How can I help you today?`);
+    appendMessage('assistant', `Hello ${ userName }! I am your AI assistant.How can I help you today ? `);
   } else {
     messages.forEach(msg => appendMessage(msg.role, msg.content));
   }
@@ -609,283 +609,283 @@ function appendMessage(role, content) {
   </script>
 `, "Chat");
 
-  // ============================================
-  // Public Routes
-  // ============================================
+// ============================================
+// Public Routes
+// ============================================
 
-  app.get("/", (c) => c.redirect("/chat"));
+app.get("/", (c) => c.redirect("/chat"));
 
-  app.get("/login", (c) => c.html(renderLogin()));
+app.get("/login", (c) => c.html(renderLogin()));
 
-  app.post("/login", async (c) => {
-    const body = await c.req.parseBody();
-    const email = body.email as string;
-    const password = body.password as string;
+app.post("/login", async (c) => {
+  const body = await c.req.parseBody();
+  const email = body.email as string;
+  const password = body.password as string;
 
-    const result = await login(email, password);
+  const result = await login(email, password);
 
-    if ("error" in result) {
-      return c.html(renderLogin(result.error));
-    }
+  if ("error" in result) {
+    return c.html(renderLogin(result.error));
+  }
 
-    c.header("Set-Cookie", createAuthCookie(result.token));
+  c.header("Set-Cookie", createAuthCookie(result.token));
+  return c.redirect("/chat");
+});
+
+app.get("/signup", (c) => c.html(renderSignup()));
+
+app.post("/signup", async (c) => {
+  const body = await c.req.parseBody();
+  const email = body.email as string;
+  const password = body.password as string;
+  const name = body.name as string | undefined;
+
+  const result = await signup(email, password, name);
+
+  if ("error" in result) {
+    return c.html(renderSignup(result.error));
+  }
+
+  c.header("Set-Cookie", createAuthCookie(result.token));
+  return c.redirect("/chat");
+});
+
+app.get("/logout", async (c) => {
+  const token = extractTokenFromCookie(c.req.header("Cookie"));
+  if (token) {
+    await logout(token);
+  }
+  c.header("Set-Cookie", createLogoutCookie());
+  return c.redirect("/login");
+});
+
+// ============================================
+// Protected Routes
+// ============================================
+
+app.get("/chat", authMiddleware, async (c) => {
+  const user = c.get("user");
+  const sessions = await getUserSessions(user.id);
+  return c.html(renderChat(user, sessions));
+});
+
+app.get("/chat/:sessionId", authMiddleware, async (c) => {
+  const user = c.get("user");
+  const sessionId = c.req.param("sessionId");
+
+  const session = await getSessionById(sessionId);
+  if (!session || session.user_id !== user.id) {
     return c.redirect("/chat");
-  });
+  }
 
-  app.get("/signup", (c) => c.html(renderSignup()));
+  const sessions = await getUserSessions(user.id);
+  return c.html(renderChat(user, sessions, sessionId));
+});
 
-  app.post("/signup", async (c) => {
-    const body = await c.req.parseBody();
-    const email = body.email as string;
-    const password = body.password as string;
-    const name = body.name as string | undefined;
+// ============================================
+// API Routes
+// ============================================
 
-    const result = await signup(email, password, name);
+app.post("/api/sessions", authMiddleware, async (c) => {
+  const user = c.get("user");
+  const session = await createSession(user.id);
+  return c.json({ sessionId: session.id });
+});
 
-    if ("error" in result) {
-      return c.html(renderSignup(result.error));
+app.get("/api/sessions/:sessionId/messages", authMiddleware, async (c) => {
+  const user = c.get("user");
+  const sessionId = c.req.param("sessionId");
+
+  const session = await getSessionById(sessionId);
+  if (!session || session.user_id !== user.id) {
+    return c.json({ error: "Not found" }, 404);
+  }
+
+  const messages = await getMessageContext(sessionId, 50);
+  return c.json(messages);
+});
+
+app.delete("/api/sessions/:sessionId", authMiddleware, async (c) => {
+  const user = c.get("user");
+  const sessionId = c.req.param("sessionId");
+
+  const session = await getSessionById(sessionId);
+  if (!session || session.user_id !== user.id) {
+    return c.json({ error: "Not found" }, 404);
+  }
+
+  await deleteSession(sessionId);
+  return c.json({ success: true });
+});
+
+// Chat streaming endpoint with search, location, and vision support
+app.post("/api/chat", authMiddleware, async (c) => {
+  const user = c.get("user");
+  const body = await c.req.json();
+  const { sessionId, message, location, imageBase64 } = body;
+
+  // Validate session ownership
+  const session = await getSessionById(sessionId);
+  if (!session || session.user_id !== user.id) {
+    return c.json({ error: "Invalid session" }, 403);
+  }
+
+  // Save user message
+  await createMessage(sessionId, "user", message);
+
+  // Get conversation context (last 10 messages)
+  const context = await getMessageContext(sessionId, 10);
+
+  // Parse location if provided
+  let locationContext: LocationContext | undefined;
+  if (location && typeof location === "object") {
+    locationContext = {
+      latitude: location.latitude,
+      longitude: location.longitude,
+      city: location.city,
+      country: location.country,
+    };
+  }
+
+  // Check if we should perform a web search
+  let searchContext = "";
+  if (shouldSearchWeb(message)) {
+    console.log(`🔍 Performing web search for: ${message}`);
+    const results = await searchWeb(message, 5);
+    searchContext = formatSearchContext(results);
+    if (searchContext) {
+      console.log(`✅ Found ${results.length} search results`);
     }
+  }
 
-    c.header("Set-Cookie", createAuthCookie(result.token));
-    return c.redirect("/chat");
-  });
+  // Build system prompt with location and capabilities
+  const systemPrompt = buildSystemPrompt(
+    user.name || "there",
+    locationContext,
+    true // search enabled
+  );
 
-  app.get("/logout", async (c) => {
-    const token = extractTokenFromCookie(c.req.header("Cookie"));
-    if (token) {
-      await logout(token);
-    }
-    c.header("Set-Cookie", createLogoutCookie());
-    return c.redirect("/login");
-  });
+  // Build the user message with search context
+  const enhancedMessage = searchContext
+    ? `${message}\n\n${searchContext}`
+    : message;
 
-  // ============================================
-  // Protected Routes
-  // ============================================
+  // Check if this is a multimodal request (has image)
+  const hasImage = imageBase64 && imageBase64.length > 0;
 
-  app.get("/chat", authMiddleware, async (c) => {
-    const user = c.get("user");
-    const sessions = await getUserSessions(user.id);
-    return c.html(renderChat(user, sessions));
-  });
+  // Update session title if this is the first message
+  if (context.length <= 1) {
+    generateTitle(message).then((title) => {
+      updateSessionTitle(sessionId, title);
+    });
+  }
 
-  app.get("/chat/:sessionId", authMiddleware, async (c) => {
-    const user = c.get("user");
-    const sessionId = c.req.param("sessionId");
+  // Stream the response
+  return streamSSE(c, async (stream) => {
+    let fullContent = "";
 
-    const session = await getSessionById(sessionId);
-    if (!session || session.user_id !== user.id) {
-      return c.redirect("/chat");
-    }
-
-    const sessions = await getUserSessions(user.id);
-    return c.html(renderChat(user, sessions, sessionId));
-  });
-
-  // ============================================
-  // API Routes
-  // ============================================
-
-  app.post("/api/sessions", authMiddleware, async (c) => {
-    const user = c.get("user");
-    const session = await createSession(user.id);
-    return c.json({ sessionId: session.id });
-  });
-
-  app.get("/api/sessions/:sessionId/messages", authMiddleware, async (c) => {
-    const user = c.get("user");
-    const sessionId = c.req.param("sessionId");
-
-    const session = await getSessionById(sessionId);
-    if (!session || session.user_id !== user.id) {
-      return c.json({ error: "Not found" }, 404);
-    }
-
-    const messages = await getMessageContext(sessionId, 50);
-    return c.json(messages);
-  });
-
-  app.delete("/api/sessions/:sessionId", authMiddleware, async (c) => {
-    const user = c.get("user");
-    const sessionId = c.req.param("sessionId");
-
-    const session = await getSessionById(sessionId);
-    if (!session || session.user_id !== user.id) {
-      return c.json({ error: "Not found" }, 404);
-    }
-
-    await deleteSession(sessionId);
-    return c.json({ success: true });
-  });
-
-  // Chat streaming endpoint with search, location, and vision support
-  app.post("/api/chat", authMiddleware, async (c) => {
-    const user = c.get("user");
-    const body = await c.req.json();
-    const { sessionId, message, location, imageBase64 } = body;
-
-    // Validate session ownership
-    const session = await getSessionById(sessionId);
-    if (!session || session.user_id !== user.id) {
-      return c.json({ error: "Invalid session" }, 403);
-    }
-
-    // Save user message
-    await createMessage(sessionId, "user", message);
-
-    // Get conversation context (last 10 messages)
-    const context = await getMessageContext(sessionId, 10);
-
-    // Parse location if provided
-    let locationContext: LocationContext | undefined;
-    if (location && typeof location === "object") {
-      locationContext = {
-        latitude: location.latitude,
-        longitude: location.longitude,
-        city: location.city,
-        country: location.country,
-      };
-    }
-
-    // Check if we should perform a web search
-    let searchContext = "";
-    if (shouldSearchWeb(message)) {
-      console.log(`🔍 Performing web search for: ${message}`);
-      const results = await searchWeb(message, 5);
-      searchContext = formatSearchContext(results);
+    try {
+      // Send search metadata if search was performed
       if (searchContext) {
-        console.log(`✅ Found ${results.length} search results`);
+        await stream.writeSSE({
+          data: JSON.stringify({ type: 'meta', search: true, query: message }),
+        });
       }
-    }
 
-    // Build system prompt with location and capabilities
-    const systemPrompt = buildSystemPrompt(
-      user.name || "there",
-      locationContext,
-      true // search enabled
-    );
+      if (hasImage) {
+        // Use vision-capable streaming for image analysis
+        const multimodalMessages: MultimodalMessage[] = [
+          { role: "system", content: systemPrompt },
+          ...context.map((m) => ({
+            role: m.role as "user" | "assistant",
+            content: m.content,
+          })),
+          {
+            role: "user",
+            content: enhancedMessage,
+            images: [imageBase64], // Base64 image
+          },
+        ];
 
-    // Build the user message with search context
-    const enhancedMessage = searchContext
-      ? `${message}\n\n${searchContext}`
-      : message;
-
-    // Check if this is a multimodal request (has image)
-    const hasImage = imageBase64 && imageBase64.length > 0;
-
-    // Update session title if this is the first message
-    if (context.length <= 1) {
-      generateTitle(message).then((title) => {
-        updateSessionTitle(sessionId, title);
-      });
-    }
-
-    // Stream the response
-    return streamSSE(c, async (stream) => {
-      let fullContent = "";
-
-      try {
-        // Send search metadata if search was performed
-        if (searchContext) {
+        for await (const chunk of streamChatWithVision(multimodalMessages)) {
+          fullContent += chunk;
           await stream.writeSSE({
-            data: JSON.stringify({ type: 'meta', search: true, query: message }),
+            data: JSON.stringify({ content: chunk, done: false }),
           });
         }
+      } else {
+        // Standard text chat
+        const messages: ChatMessage[] = [
+          { role: "system", content: systemPrompt },
+          ...context,
+          { role: "user", content: enhancedMessage },
+        ];
 
-        if (hasImage) {
-          // Use vision-capable streaming for image analysis
-          const multimodalMessages: MultimodalMessage[] = [
-            { role: "system", content: systemPrompt },
-            ...context.map((m) => ({
-              role: m.role as "user" | "assistant",
-              content: m.content,
-            })),
-            {
-              role: "user",
-              content: enhancedMessage,
-              images: [imageBase64], // Base64 image
-            },
-          ];
+        // Remove the last user message from context since we added enhanced version
+        messages.pop();
+        messages.push({ role: "user", content: enhancedMessage });
 
-          for await (const chunk of streamChatWithVision(multimodalMessages)) {
-            fullContent += chunk;
-            await stream.writeSSE({
-              data: JSON.stringify({ content: chunk, done: false }),
-            });
-          }
-        } else {
-          // Standard text chat
-          const messages: ChatMessage[] = [
-            { role: "system", content: systemPrompt },
-            ...context,
-            { role: "user", content: enhancedMessage },
-          ];
-
-          // Remove the last user message from context since we added enhanced version
-          messages.pop();
-          messages.push({ role: "user", content: enhancedMessage });
-
-          for await (const chunk of streamChat(messages)) {
-            fullContent += chunk;
-            await stream.writeSSE({
-              data: JSON.stringify({ content: chunk, done: false }),
-            });
-          }
+        for await (const chunk of streamChat(messages)) {
+          fullContent += chunk;
+          await stream.writeSSE({
+            data: JSON.stringify({ content: chunk, done: false }),
+          });
         }
-
-        // Save assistant message
-        await createMessage(sessionId, "assistant", fullContent);
-
-        await stream.writeSSE({
-          data: JSON.stringify({ content: "", done: true }),
-        });
-      } catch (error) {
-        console.error("Stream error:", error);
-        await stream.writeSSE({
-          data: JSON.stringify({ error: String(error), done: true }),
-        });
       }
-    });
+
+      // Save assistant message
+      await createMessage(sessionId, "assistant", fullContent);
+
+      await stream.writeSSE({
+        data: JSON.stringify({ content: "", done: true }),
+      });
+    } catch (error) {
+      console.error("Stream error:", error);
+      await stream.writeSSE({
+        data: JSON.stringify({ error: String(error), done: true }),
+      });
+    }
   });
+});
 
-  // ============================================
-  // Health Check
-  // ============================================
+// ============================================
+// Health Check
+// ============================================
 
-  app.get("/health", async (c) => {
-    const dbOk = await healthCheck();
-    const ollamaOk = await checkOllamaHealth();
+app.get("/health", async (c) => {
+  const dbOk = await healthCheck();
+  const ollamaOk = await checkOllamaHealth();
 
-    return c.json({
-      status: dbOk && ollamaOk ? "healthy" : "degraded",
-      database: dbOk ? "connected" : "disconnected",
-      ollama: ollamaOk ? "connected" : "disconnected",
-      timestamp: new Date().toISOString(),
-    });
+  return c.json({
+    status: dbOk && ollamaOk ? "healthy" : "degraded",
+    database: dbOk ? "connected" : "disconnected",
+    ollama: ollamaOk ? "connected" : "disconnected",
+    timestamp: new Date().toISOString(),
   });
+});
 
-  // ============================================
-  // Server Startup
-  // ============================================
+// ============================================
+// Server Startup
+// ============================================
 
-  const port = parseInt(process.env.PORT || "3000");
+const port = parseInt(process.env.PORT || "3000");
 
-  console.log(`🚀 Starting chat.sudharsana.dev on port ${port}`);
+console.log(`🚀 Starting chat.sudharsana.dev on port ${port}`);
 
-  // Graceful shutdown
-  process.on("SIGINT", async () => {
-    console.log("\nShutting down...");
-    await closeConnection();
-    process.exit(0);
-  });
+// Graceful shutdown
+process.on("SIGINT", async () => {
+  console.log("\nShutting down...");
+  await closeConnection();
+  process.exit(0);
+});
 
-  process.on("SIGTERM", async () => {
-    console.log("\nShutting down...");
-    await closeConnection();
-    process.exit(0);
-  });
+process.on("SIGTERM", async () => {
+  console.log("\nShutting down...");
+  await closeConnection();
+  process.exit(0);
+});
 
-  export default {
-    port,
-    fetch: app.fetch,
-  };
+export default {
+  port,
+  fetch: app.fetch,
+};
