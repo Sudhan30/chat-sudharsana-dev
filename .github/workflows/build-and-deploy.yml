@@ -1,0 +1,158 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel in-progress runs when a new run starts
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: docker.io
+  IMAGE_REPO: sudhan03/chat-sudharsana
+  INFRA_REPO: Sudhan30/my-blog-site-cluster-infra
+
+jobs:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # BUILD JOB: Build and push Docker image
+  # Using self-hosted runner
+  # ═══════════════════════════════════════════════════════════════════════════
+  build:
+    runs-on: self-hosted
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      with:
+        driver-opts: |
+          image=moby/buildkit:latest
+          network=host
+        buildkitd-flags: --allow-insecure-entitlement network.host
+
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Get commit info
+      id: commit-info
+      run: |
+        echo "commit_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        echo "commit_sha_full=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: |
+          ${{ env.IMAGE_REPO }}:${{ steps.commit-info.outputs.commit_sha }}
+          ${{ env.IMAGE_REPO }}:latest
+        cache-from: type=registry,ref=${{ env.IMAGE_REPO }}:buildcache
+        cache-to: type=registry,ref=${{ env.IMAGE_REPO }}:buildcache,mode=max
+        platforms: linux/amd64
+
+    - name: Image digest
+      run: |
+        echo "✅ Image pushed: ${{ env.IMAGE_REPO }}:${{ steps.commit-info.outputs.commit_sha }}"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # DEPLOY JOB: Update infrastructure repo with new image tag
+  # ═══════════════════════════════════════════════════════════════════════════
+  deploy:
+    runs-on: self-hosted
+    needs: build
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Check secrets
+      run: |
+        if [ -z "${{ secrets.PAT_TOKEN }}" ]; then
+          echo "⚠️ PAT_TOKEN secret is not set!"
+          exit 1
+        fi
+        echo "✅ Secrets configured"
+
+    - name: Checkout infrastructure repository
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ env.INFRA_REPO }}
+        path: ./infra-repo
+        token: ${{ secrets.PAT_TOKEN }}
+        ref: main
+
+    - name: Get commit info
+      id: commit-info
+      run: |
+        echo "commit_sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        echo "commit_sha_full=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+        echo "branch=$(git rev-parse --abbrev-ref HEAD)" >> $GITHUB_OUTPUT
+
+    - name: Update deployment manifest in infra repo
+      run: |
+        echo "📝 Updating chat deployment manifest with new image..."
+        cd infra-repo
+
+        # Pull latest changes to avoid conflicts
+        git pull origin main --rebase
+
+        IMAGE_TAG="${{ steps.commit-info.outputs.commit_sha }}"
+        BACKEND_DIR="clusters/prod/apps/backend"
+
+        echo "🏷️ New image tag: ${IMAGE_TAG}"
+
+        # Update chat deployment manifest
+        sed -i "s|image: .*chat-sudharsana:.*|image: docker.io/${{ env.IMAGE_REPO }}:${IMAGE_TAG}|g" ${BACKEND_DIR}/chat-deployment.yaml
+
+        # Show updated image
+        echo "Updated image tag:"
+        grep "image:.*chat-sudharsana" ${BACKEND_DIR}/chat-deployment.yaml || true
+
+        # Check for changes
+        if git diff --quiet; then
+          echo "⏭️ No changes detected - image already up to date"
+        else
+          echo "📦 Changes detected, committing..."
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add ${BACKEND_DIR}/chat-deployment.yaml
+
+          COMMIT_MSG="🚀 Update chat.sudharsana.dev image to ${IMAGE_TAG}
+
+          - Built from: Sudhan30/chat-sudharsana-dev@${{ steps.commit-info.outputs.branch }}
+          - Commit: ${{ steps.commit-info.outputs.commit_sha_full }}"
+
+          git commit -m "$COMMIT_MSG"
+
+          # Set up auth and push
+          git remote set-url origin https://${{ secrets.PAT_TOKEN }}@github.com/${{ env.INFRA_REPO }}.git
+
+          echo "🚀 Pushing to infra repo..."
+          git push origin main
+
+          echo "✅ Deployment manifest updated and pushed!"
+        fi
+
+    - name: Deployment summary
+      run: |
+        echo "✅ chat.sudharsana.dev image built and pushed!"
+        echo ""
+        echo "📦 Image: ${{ env.IMAGE_REPO }}:${{ steps.commit-info.outputs.commit_sha }}"
+        echo ""
+        echo "🔄 Flux CD will now deploy the updated image to your cluster"
+        echo "⏱️  Expected deployment time: 2-3 minutes"
+        echo "🔍 Monitor with: kubectl get pods -n web -l app=chat-app"

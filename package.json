@@ -1,0 +1,25 @@
+{
+  "name": "chat-sudharsana-dev",
+  "version": "1.0.0",
+  "description": "High-performance chat application with Bun, Hono, and Ollama",
+  "type": "module",
+  "scripts": {
+    "dev": "bun --hot src/server.ts",
+    "start": "bun src/server.ts",
+    "build": "bun build src/server.ts --outdir=dist --target=bun",
+    "db:setup": "psql -f schema.sql",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "^4.6.0",
+    "postgres": "^3.4.4"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/react": "^18.3.0",
+    "typescript": "^5.6.0"
+  },
+  "peerDependencies": {
+    "react": "^18.3.0"
+  }
+}
