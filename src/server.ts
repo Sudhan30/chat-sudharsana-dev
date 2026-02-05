@@ -475,7 +475,7 @@ async function loadMessages() {
   messageContainer.innerHTML = '';
 
   if (messages.length === 0) {
-    appendMessage('assistant', `Hello ${ userName }! I am your AI assistant.How can I help you today ? `);
+    appendMessage('assistant', \`Hello \${ userName }! I am your AI assistant. How can I help you today?\`);
   } else {
     messages.forEach(msg => appendMessage(msg.role, msg.content));
   }
