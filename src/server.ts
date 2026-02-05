@@ -577,6 +577,15 @@ function appendMessage(role, content) {
             if (line.startsWith('data: ')) {
               try {
                 const data = JSON.parse(line.slice(6));
+                
+                // Handle metadata (search indicator)
+                if (data.type === 'meta' && data.search) {
+                  const metaDiv = document.createElement('div');
+                  metaDiv.className = 'text-xs text-blue-400 mb-2 flex items-center gap-1';
+                  metaDiv.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg> Searched web for context';
+                  contentDiv.parentElement.insertBefore(metaDiv, contentDiv.parentElement.firstChild);
+                }
+                
                 if (data.content) {
                   fullContent += data.content;
                   contentDiv.textContent = fullContent;
@@ -776,6 +785,13 @@ function appendMessage(role, content) {
       let fullContent = "";
 
       try {
+        // Send search metadata if search was performed
+        if (searchContext) {
+          await stream.writeSSE({
+            data: JSON.stringify({ type: 'meta', search: true, query: message }),
+          });
+        }
+
         if (hasImage) {
           // Use vision-capable streaming for image analysis
           const multimodalMessages: MultimodalMessage[] = [

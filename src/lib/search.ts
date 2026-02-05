@@ -51,7 +51,8 @@ export async function searchWeb(query: string, count = 5): Promise<SearchResult[
         });
 
         if (!response.ok) {
-            console.error(`Brave Search error: ${response.status}`);
+            const errorText = await response.text();
+            console.error(`Brave Search error: ${response.status} ${response.statusText} - ${errorText}`);
             return [];
         }
 
