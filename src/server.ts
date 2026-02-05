@@ -411,6 +411,7 @@ const renderChat = (user: User, sessions: any[], currentSessionId?: string) => r
     const messageContainer = document.getElementById('message-container');
     const typingIndicator = document.getElementById('typing-indicator');
     const messagesDiv = document.getElementById('messages');
+    const userName = "${user.name || 'there'}";
 
     // User location (will be populated if permitted)
     let userLocation = null;
@@ -472,7 +473,13 @@ async function loadMessages() {
   const res = await fetch('/api/sessions/' + sessionId + '/messages');
   const messages = await res.json();
   messageContainer.innerHTML = '';
-  messages.forEach(msg => appendMessage(msg.role, msg.content));
+
+  if (messages.length === 0) {
+    appendMessage('assistant', `Hello ${userName}! I am your AI assistant. How can I help you today?`);
+  } else {
+    messages.forEach(msg => appendMessage(msg.role, msg.content));
+  }
+
   scrollToBottom();
 }
 
