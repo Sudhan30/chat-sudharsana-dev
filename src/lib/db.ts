@@ -92,6 +92,31 @@ export async function isUserApproved(userId: string): Promise<boolean> {
   return result?.approved ?? false;
 }
 
+export async function approveUser(userId: string): Promise<User | null> {
+  const [user] = await sql<User[]>`
+    UPDATE users SET approved = true, updated_at = NOW()
+    WHERE id = ${userId}
+    RETURNING *
+  `;
+  return user || null;
+}
+
+export async function declineUser(userId: string): Promise<boolean> {
+  const result = await sql`
+    DELETE FROM users WHERE id = ${userId} AND approved = false
+  `;
+  return result.count > 0;
+}
+
+export async function approveUserByEmail(email: string): Promise<User | null> {
+  const [user] = await sql<User[]>`
+    UPDATE users SET approved = true, updated_at = NOW()
+    WHERE email = ${email}
+    RETURNING *
+  `;
+  return user || null;
+}
+
 // ============================================
 // Auth Token Operations
 // ============================================

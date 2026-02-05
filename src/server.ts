@@ -14,6 +14,7 @@ import {
   createSession,
   getSessionById,
   getUserSessions,
+  getUserById,
   updateSessionTitle,
   deleteSession,
   createMessage,
@@ -23,8 +24,12 @@ import {
   saveSummary,
   healthCheck,
   closeConnection,
+  approveUser,
+  declineUser,
   type User,
 } from "./lib/db";
+
+import { notifyUserApprovalAction } from "./lib/slack";
 
 import {
   streamChat,
@@ -997,6 +1002,106 @@ app.post("/api/chat", authMiddleware, async (c) => {
     }
   });
 });
+
+// ============================================
+// Admin User Approval API
+// ============================================
+
+app.get("/api/admin/approve", async (c) => {
+  const userId = c.req.query("userId");
+  const action = c.req.query("action");
+
+  if (!userId || !action) {
+    return c.html(renderAdminResult("error", "Missing userId or action parameter"), 400);
+  }
+
+  if (action !== "approve" && action !== "decline") {
+    return c.html(renderAdminResult("error", "Invalid action. Must be 'approve' or 'decline'"), 400);
+  }
+
+  try {
+    if (action === "approve") {
+      const user = await approveUser(userId);
+      if (!user) {
+        return c.html(renderAdminResult("error", "User not found"), 404);
+      }
+      // Notify Slack about the approval
+      notifyUserApprovalAction(user.email, "approved").catch(console.error);
+      return c.html(renderAdminResult("success", `User ${user.email} has been approved!`));
+    } else {
+      const user = await getUserById(userId);
+      if (!user) {
+        return c.html(renderAdminResult("error", "User not found"), 404);
+      }
+      const email = user.email;
+      const deleted = await declineUser(userId);
+      if (!deleted) {
+        return c.html(renderAdminResult("error", "User was already approved or not found"), 400);
+      }
+      // Notify Slack about the decline
+      notifyUserApprovalAction(email, "declined").catch(console.error);
+      return c.html(renderAdminResult("success", `User ${email} has been declined and removed.`));
+    }
+  } catch (error) {
+    console.error("Admin approval error:", error);
+    return c.html(renderAdminResult("error", "An error occurred processing the request"), 500);
+  }
+});
+
+function renderAdminResult(status: "success" | "error", message: string): string {
+  const bgColor = status === "success" ? "#10b981" : "#ef4444";
+  const icon = status === "success" ? "✓" : "✗";
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>User Approval - ${status === "success" ? "Success" : "Error"}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #e2e8f0;
+    }
+    .card {
+      background: #1e293b;
+      border-radius: 16px;
+      padding: 48px;
+      text-align: center;
+      max-width: 400px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+    .icon {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: ${bgColor};
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 24px;
+      font-size: 40px;
+      color: white;
+    }
+    h1 { font-size: 24px; margin-bottom: 16px; }
+    p { color: #94a3b8; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">${icon}</div>
+    <h1>${status === "success" ? "Success" : "Error"}</h1>
+    <p>${message}</p>
+  </div>
+</body>
+</html>`;
+}
 
 // ============================================
 // Health Check
