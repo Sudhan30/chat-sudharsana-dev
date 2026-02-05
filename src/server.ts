@@ -18,6 +18,9 @@ import {
   deleteSession,
   createMessage,
   getMessageContext,
+  getEnhancedContext,
+  getSessionMessageCount,
+  saveSummary,
   healthCheck,
   closeConnection,
   type User,
@@ -734,6 +737,60 @@ app.delete("/api/sessions/:sessionId", authMiddleware, async (c) => {
   return c.json({ success: true });
 });
 
+/**
+ * Check if summarization is needed and run it in background
+ */
+async function triggerSummarizationIfNeeded(sessionId: string): Promise<void> {
+  try {
+    const messageCount = await getSessionMessageCount(sessionId);
+
+    // Check if we should summarize (every 10 messages)
+    if (shouldTriggerSummarization(messageCount)) {
+      const summaryType = getSummaryType(messageCount);
+
+      if (summaryType) {
+        console.log(`📝 Triggering ${summaryType} summarization for session ${sessionId} (msg count: ${messageCount})`);
+
+        // Get messages to summarize
+        // For detailed summary: last 50 messages
+        // For high-level summary: all messages
+        const limit = summaryType === "detailed" ? 50 : 1000;
+        const messages = await getSessionMessages(sessionId, limit);
+
+        // Convert to format expected by summarizer
+        const messagesForSummary = messages.map(m => ({
+          role: m.role,
+          content: m.content,
+          created_at: m.created_at
+        }));
+
+        // Generate summary
+        const summaryText = await generateSummary(messagesForSummary, summaryType);
+        const tokenCount = estimateTokenCount(summaryText);
+
+        // Save to database
+        // Define range based on current count
+        const rangeEnd = messageCount;
+        const rangeStart = Math.max(1, rangeEnd - (summaryType === "detailed" ? 49 : rangeEnd - 1));
+
+        await saveSummary(
+          sessionId,
+          summaryType,
+          rangeStart,
+          rangeEnd,
+          summaryText,
+          tokenCount
+        );
+
+        console.log(`✅ Saved ${summaryType} summary (${tokenCount} tokens) for session ${sessionId}`);
+      }
+    }
+  } catch (error) {
+    console.error("Error in background summarization:", error);
+    // Don't throw, just log - background task shouldn't crash request
+  }
+}
+
 // Chat streaming endpoint with search, location, and vision support
 app.post("/api/chat", authMiddleware, async (c) => {
   const user = c.get("user");
@@ -749,8 +806,13 @@ app.post("/api/chat", authMiddleware, async (c) => {
   // Save user message
   await createMessage(sessionId, "user", message);
 
-  // Get conversation context (last 10 messages)
-  const context = await getMessageContext(sessionId, 10);
+  // Trigger summarization in background if needed (don't block response)
+  triggerSummarizationIfNeeded(sessionId).catch(err =>
+    console.error('Background summarization failed:', err)
+  );
+
+  // Get enhanced conversation context (summaries + recent messages)
+  const context = await getEnhancedContext(sessionId, 5);
 
   // Parse location if provided
   let locationContext: LocationContext | undefined;

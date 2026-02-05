@@ -234,7 +234,116 @@ export async function getMessageContext(
   }));
 }
 
+// ============================================================================
+// CONVERSATION SUMMARIES
+// ============================================================================
+
+export interface ConversationSummary {
+  id: string;
+  session_id: string;
+  summary_type: "detailed" | "high_level";
+  message_range_start: number;
+  message_range_end: number;
+  summary_text: string;
+  token_count: number | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+/**
+ * Save or update a conversation summary
+ */
+export async function saveSummary(
+  sessionId: string,
+  summaryType: "detailed" | "high_level",
+  messageRangeStart: number,
+  messageRangeEnd: number,
+  summaryText: string,
+  tokenCount: number | null = null
+): Promise<ConversationSummary> {
+  const [summary] = await sql<ConversationSummary[]>`
+    INSERT INTO conversation_summaries (
+      session_id, summary_type, message_range_start, message_range_end,
+      summary_text, token_count
+    )
+    VALUES (${sessionId}, ${summaryType}, ${messageRangeStart}, ${messageRangeEnd}, ${summaryText}, ${tokenCount})
+    ON CONFLICT (session_id, summary_type)
+    DO UPDATE SET
+      message_range_end = EXCLUDED.message_range_end,
+      summary_text = EXCLUDED.summary_text,
+      token_count = EXCLUDED.token_count,
+      updated_at = NOW()
+    RETURNING *
+  `;
+  return summary;
+}
+
+/**
+ * Get summaries for a session
+ */
+export async function getSummaries(sessionId: string): Promise<ConversationSummary[]> {
+  return await sql<ConversationSummary[]>`
+    SELECT * FROM conversation_summaries
+    WHERE session_id = ${sessionId}
+    ORDER BY summary_type DESC
+  `;
+}
+
+/**
+ * Get enhanced context with summaries + recent messages
+ * This replaces getMessageContext for smarter context management
+ */
+export async function getEnhancedContext(
+  sessionId: string,
+  recentMessageLimit = 5
+): Promise<Array<{ role: string; content: string }>> {
+  // Get summaries
+  const summaries = await getSummaries(sessionId);
+
+  // Get recent messages
+  const recentMessages = await getSessionMessages(sessionId, recentMessageLimit);
+
+  const context: Array<{ role: string; content: string }> = [];
+
+  // Add high-level summary if it exists
+  const highLevelSummary = summaries.find(s => s.summary_type === "high_level");
+  if (highLevelSummary) {
+    context.push({
+      role: "system",
+      content: `[Conversation Summary - Earlier Messages]: ${highLevelSummary.summary_text}`
+    });
+  }
+
+  // Add detailed summary if it exists
+  const detailedSummary = summaries.find(s => s.summary_type === "detailed");
+  if (detailedSummary) {
+    context.push({
+      role: "system",
+      content: `[Conversation Summary - Recent Context]: ${detailedSummary.summary_text}`
+    });
+  }
+
+  // Add recent messages
+  context.push(...recentMessages.map((m) => ({
+    role: m.role === "assistant" ? "assistant" : "user",
+    content: m.content,
+  })));
+
+  return context;
+}
+
+/**
+ * Get count of messages in a session
+ */
+export async function getSessionMessageCount(sessionId: string): Promise<number> {
+  const [result] = await sql<Array<{ count: string }>>`
+    SELECT COUNT(*)::text as count FROM messages WHERE session_id = ${sessionId}
+  `;
+  return parseInt(result.count, 10);
+}
+
 // Health check
+
 export async function healthCheck(): Promise<boolean> {
   try {
     await sql`SELECT 1`;
