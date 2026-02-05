@@ -25,10 +25,21 @@ import {
 
 import {
   streamChat,
+  streamChatWithVision,
   generateTitle,
   checkOllamaHealth,
+  buildSystemPrompt,
   type ChatMessage,
+  type MultimodalMessage,
+  type LocationContext,
 } from "./lib/ai";
+
+import {
+  searchWeb,
+  shouldSearchWeb,
+  formatSearchContext,
+  checkSearchHealth,
+} from "./lib/search";
 
 import {
   signup,
@@ -297,21 +308,20 @@ const renderChat = (user: User, sessions: any[], currentSessionId?: string) => r
 
       <div class="flex-1 overflow-y-auto p-2">
         ${sessions
-          .map(
-            (s) => `
+    .map(
+      (s) => `
           <a
             href="/chat/${s.id}"
-            class="block p-3 rounded-lg mb-1 truncate ${
-              s.id === currentSessionId
-                ? "bg-dark-800 text-white"
-                : "text-dark-200 hover:bg-dark-800"
-            }"
+            class="block p-3 rounded-lg mb-1 truncate ${s.id === currentSessionId
+          ? "bg-dark-800 text-white"
+          : "text-dark-200 hover:bg-dark-800"
+        }"
           >
             ${s.title}
           </a>
         `
-          )
-          .join("")}
+    )
+    .join("")}
       </div>
 
       <div class="p-4 border-t border-dark-800">
@@ -357,8 +367,23 @@ const renderChat = (user: User, sessions: any[], currentSessionId?: string) => r
       <!-- Input -->
       ${currentSessionId ? `
         <div class="p-4 border-t border-dark-800">
-          <form id="chat-form" class="flex gap-4">
+          <div id="image-preview" class="hidden mb-3 relative">
+            <img id="preview-img" class="max-h-32 rounded-lg" />
+            <button type="button" onclick="clearImage()" class="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm">&times;</button>
+          </div>
+          <form id="chat-form" class="flex gap-2 items-end">
             <input type="hidden" id="session-id" value="${currentSessionId}" />
+            <input type="file" id="image-input" accept="image/*" class="hidden" onchange="handleImageSelect(event)" />
+            <button
+              type="button"
+              onclick="document.getElementById('image-input').click()"
+              class="p-3 bg-dark-800 hover:bg-dark-700 text-dark-200 rounded-xl transition"
+              title="Upload image"
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+              </svg>
+            </button>
             <textarea
               id="message-input"
               placeholder="Type your message..."
@@ -387,22 +412,73 @@ const renderChat = (user: User, sessions: any[], currentSessionId?: string) => r
     const typingIndicator = document.getElementById('typing-indicator');
     const messagesDiv = document.getElementById('messages');
 
-    // Load existing messages
-    if (sessionId) {
-      loadMessages();
+    // User location (will be populated if permitted)
+    let userLocation = null;
+    let pendingImageBase64 = null;
+
+    // Request geolocation on page load
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          userLocation = {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+          };
+          // Try to get city/country from reverse geocoding
+          try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&format=json`);
+            const data = await res.json();
+if (data.address) {
+  userLocation.city = data.address.city || data.address.town || data.address.village;
+  userLocation.country = data.address.country;
+}
+          } catch (e) {
+  console.log('Could not get location details');
+}
+console.log('📍 Location obtained:', userLocation);
+        },
+(err) => console.log('Location not available:', err.message),
+  { enableHighAccuracy: false, timeout: 5000 }
+      );
     }
 
-    async function loadMessages() {
-      const res = await fetch('/api/sessions/' + sessionId + '/messages');
-      const messages = await res.json();
-      messageContainer.innerHTML = '';
-      messages.forEach(msg => appendMessage(msg.role, msg.content));
-      scrollToBottom();
-    }
+// Image handling
+function handleImageSelect(event) {
+  const file = event.target.files[0];
+  if (!file) return;
 
-    function appendMessage(role, content) {
-      const isUser = role === 'user';
-      const html = \`
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const base64 = e.target.result.split(',')[1]; // Remove data:image/...;base64, prefix
+    pendingImageBase64 = base64;
+    document.getElementById('preview-img').src = e.target.result;
+    document.getElementById('image-preview').classList.remove('hidden');
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearImage() {
+  pendingImageBase64 = null;
+  document.getElementById('image-input').value = '';
+  document.getElementById('image-preview').classList.add('hidden');
+}
+
+// Load existing messages
+if (sessionId) {
+  loadMessages();
+}
+
+async function loadMessages() {
+  const res = await fetch('/api/sessions/' + sessionId + '/messages');
+  const messages = await res.json();
+  messageContainer.innerHTML = '';
+  messages.forEach(msg => appendMessage(msg.role, msg.content));
+  scrollToBottom();
+}
+
+function appendMessage(role, content) {
+  const isUser = role === 'user';
+  const html = \`
         <div class="flex items-start gap-3 \${isUser ? 'flex-row-reverse' : ''}">
           <div class="w-8 h-8 rounded-full \${isUser ? 'bg-blue-600' : 'bg-green-600'} flex items-center justify-center text-sm font-bold flex-shrink-0">
             \${isUser ? 'You' : 'AI'}
@@ -437,10 +513,11 @@ const renderChat = (user: User, sessions: any[], currentSessionId?: string) => r
 
       const input = document.getElementById('message-input');
       const message = input.value.trim();
-      if (!message) return;
+      if (!message && !pendingImageBase64) return;
 
-      // Add user message
-      appendMessage('user', message);
+      // Add user message (with image indicator if present)
+      const displayMsg = pendingImageBase64 ? '📷 ' + message : message;
+      appendMessage('user', displayMsg || '📷 [Image]');
       input.value = '';
       scrollToBottom();
 
@@ -449,12 +526,20 @@ const renderChat = (user: User, sessions: any[], currentSessionId?: string) => r
       scrollToBottom();
 
       try {
-        // Stream response
+        // Stream response with location and image
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId, message })
+          body: JSON.stringify({ 
+            sessionId, 
+            message: message || 'What is in this image?',
+            location: userLocation,
+            imageBase64: pendingImageBase64
+          })
         });
+
+        // Clear image after sending
+        clearImage();
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -508,214 +593,276 @@ const renderChat = (user: User, sessions: any[], currentSessionId?: string) => r
   </script>
 `, "Chat");
 
-// ============================================
-// Public Routes
-// ============================================
+  // ============================================
+  // Public Routes
+  // ============================================
 
-app.get("/", (c) => c.redirect("/chat"));
+  app.get("/", (c) => c.redirect("/chat"));
 
-app.get("/login", (c) => c.html(renderLogin()));
+  app.get("/login", (c) => c.html(renderLogin()));
 
-app.post("/login", async (c) => {
-  const body = await c.req.parseBody();
-  const email = body.email as string;
-  const password = body.password as string;
+  app.post("/login", async (c) => {
+    const body = await c.req.parseBody();
+    const email = body.email as string;
+    const password = body.password as string;
 
-  const result = await login(email, password);
+    const result = await login(email, password);
 
-  if ("error" in result) {
-    return c.html(renderLogin(result.error));
-  }
+    if ("error" in result) {
+      return c.html(renderLogin(result.error));
+    }
 
-  c.header("Set-Cookie", createAuthCookie(result.token));
-  return c.redirect("/chat");
-});
-
-app.get("/signup", (c) => c.html(renderSignup()));
-
-app.post("/signup", async (c) => {
-  const body = await c.req.parseBody();
-  const email = body.email as string;
-  const password = body.password as string;
-  const name = body.name as string | undefined;
-
-  const result = await signup(email, password, name);
-
-  if ("error" in result) {
-    return c.html(renderSignup(result.error));
-  }
-
-  c.header("Set-Cookie", createAuthCookie(result.token));
-  return c.redirect("/chat");
-});
-
-app.get("/logout", async (c) => {
-  const token = extractTokenFromCookie(c.req.header("Cookie"));
-  if (token) {
-    await logout(token);
-  }
-  c.header("Set-Cookie", createLogoutCookie());
-  return c.redirect("/login");
-});
-
-// ============================================
-// Protected Routes
-// ============================================
-
-app.get("/chat", authMiddleware, async (c) => {
-  const user = c.get("user");
-  const sessions = await getUserSessions(user.id);
-  return c.html(renderChat(user, sessions));
-});
-
-app.get("/chat/:sessionId", authMiddleware, async (c) => {
-  const user = c.get("user");
-  const sessionId = c.req.param("sessionId");
-
-  const session = await getSessionById(sessionId);
-  if (!session || session.user_id !== user.id) {
+    c.header("Set-Cookie", createAuthCookie(result.token));
     return c.redirect("/chat");
-  }
+  });
 
-  const sessions = await getUserSessions(user.id);
-  return c.html(renderChat(user, sessions, sessionId));
-});
+  app.get("/signup", (c) => c.html(renderSignup()));
 
-// ============================================
-// API Routes
-// ============================================
+  app.post("/signup", async (c) => {
+    const body = await c.req.parseBody();
+    const email = body.email as string;
+    const password = body.password as string;
+    const name = body.name as string | undefined;
 
-app.post("/api/sessions", authMiddleware, async (c) => {
-  const user = c.get("user");
-  const session = await createSession(user.id);
-  return c.json({ sessionId: session.id });
-});
+    const result = await signup(email, password, name);
 
-app.get("/api/sessions/:sessionId/messages", authMiddleware, async (c) => {
-  const user = c.get("user");
-  const sessionId = c.req.param("sessionId");
+    if ("error" in result) {
+      return c.html(renderSignup(result.error));
+    }
 
-  const session = await getSessionById(sessionId);
-  if (!session || session.user_id !== user.id) {
-    return c.json({ error: "Not found" }, 404);
-  }
+    c.header("Set-Cookie", createAuthCookie(result.token));
+    return c.redirect("/chat");
+  });
 
-  const messages = await getMessageContext(sessionId, 50);
-  return c.json(messages);
-});
+  app.get("/logout", async (c) => {
+    const token = extractTokenFromCookie(c.req.header("Cookie"));
+    if (token) {
+      await logout(token);
+    }
+    c.header("Set-Cookie", createLogoutCookie());
+    return c.redirect("/login");
+  });
 
-app.delete("/api/sessions/:sessionId", authMiddleware, async (c) => {
-  const user = c.get("user");
-  const sessionId = c.req.param("sessionId");
+  // ============================================
+  // Protected Routes
+  // ============================================
 
-  const session = await getSessionById(sessionId);
-  if (!session || session.user_id !== user.id) {
-    return c.json({ error: "Not found" }, 404);
-  }
+  app.get("/chat", authMiddleware, async (c) => {
+    const user = c.get("user");
+    const sessions = await getUserSessions(user.id);
+    return c.html(renderChat(user, sessions));
+  });
 
-  await deleteSession(sessionId);
-  return c.json({ success: true });
-});
+  app.get("/chat/:sessionId", authMiddleware, async (c) => {
+    const user = c.get("user");
+    const sessionId = c.req.param("sessionId");
 
-// Chat streaming endpoint
-app.post("/api/chat", authMiddleware, async (c) => {
-  const user = c.get("user");
-  const body = await c.req.json();
-  const { sessionId, message } = body;
+    const session = await getSessionById(sessionId);
+    if (!session || session.user_id !== user.id) {
+      return c.redirect("/chat");
+    }
 
-  // Validate session ownership
-  const session = await getSessionById(sessionId);
-  if (!session || session.user_id !== user.id) {
-    return c.json({ error: "Invalid session" }, 403);
-  }
+    const sessions = await getUserSessions(user.id);
+    return c.html(renderChat(user, sessions, sessionId));
+  });
 
-  // Save user message
-  await createMessage(sessionId, "user", message);
+  // ============================================
+  // API Routes
+  // ============================================
 
-  // Get conversation context (last 10 messages)
-  const context = await getMessageContext(sessionId, 10);
+  app.post("/api/sessions", authMiddleware, async (c) => {
+    const user = c.get("user");
+    const session = await createSession(user.id);
+    return c.json({ sessionId: session.id });
+  });
 
-  // Add system prompt
-  const messages: ChatMessage[] = [
-    {
-      role: "system",
-      content: `You are a helpful AI assistant. Be concise, accurate, and friendly. The user's name is ${user.name || "there"}.`,
-    },
-    ...context,
-  ];
+  app.get("/api/sessions/:sessionId/messages", authMiddleware, async (c) => {
+    const user = c.get("user");
+    const sessionId = c.req.param("sessionId");
 
-  // Update session title if this is the first message
-  if (context.length <= 1) {
-    generateTitle(message).then((title) => {
-      updateSessionTitle(sessionId, title);
-    });
-  }
+    const session = await getSessionById(sessionId);
+    if (!session || session.user_id !== user.id) {
+      return c.json({ error: "Not found" }, 404);
+    }
 
-  // Stream the response
-  return streamSSE(c, async (stream) => {
-    let fullContent = "";
+    const messages = await getMessageContext(sessionId, 50);
+    return c.json(messages);
+  });
 
-    try {
-      for await (const chunk of streamChat(messages)) {
-        fullContent += chunk;
-        await stream.writeSSE({
-          data: JSON.stringify({ content: chunk, done: false }),
-        });
+  app.delete("/api/sessions/:sessionId", authMiddleware, async (c) => {
+    const user = c.get("user");
+    const sessionId = c.req.param("sessionId");
+
+    const session = await getSessionById(sessionId);
+    if (!session || session.user_id !== user.id) {
+      return c.json({ error: "Not found" }, 404);
+    }
+
+    await deleteSession(sessionId);
+    return c.json({ success: true });
+  });
+
+  // Chat streaming endpoint with search, location, and vision support
+  app.post("/api/chat", authMiddleware, async (c) => {
+    const user = c.get("user");
+    const body = await c.req.json();
+    const { sessionId, message, location, imageBase64 } = body;
+
+    // Validate session ownership
+    const session = await getSessionById(sessionId);
+    if (!session || session.user_id !== user.id) {
+      return c.json({ error: "Invalid session" }, 403);
+    }
+
+    // Save user message
+    await createMessage(sessionId, "user", message);
+
+    // Get conversation context (last 10 messages)
+    const context = await getMessageContext(sessionId, 10);
+
+    // Parse location if provided
+    let locationContext: LocationContext | undefined;
+    if (location && typeof location === "object") {
+      locationContext = {
+        latitude: location.latitude,
+        longitude: location.longitude,
+        city: location.city,
+        country: location.country,
+      };
+    }
+
+    // Check if we should perform a web search
+    let searchContext = "";
+    if (shouldSearchWeb(message)) {
+      console.log(`🔍 Performing web search for: ${message}`);
+      const results = await searchWeb(message, 5);
+      searchContext = formatSearchContext(results);
+      if (searchContext) {
+        console.log(`✅ Found ${results.length} search results`);
       }
+    }
 
-      // Save assistant message
-      await createMessage(sessionId, "assistant", fullContent);
+    // Build system prompt with location and capabilities
+    const systemPrompt = buildSystemPrompt(
+      user.name || "there",
+      locationContext,
+      true // search enabled
+    );
 
-      await stream.writeSSE({
-        data: JSON.stringify({ content: "", done: true }),
-      });
-    } catch (error) {
-      console.error("Stream error:", error);
-      await stream.writeSSE({
-        data: JSON.stringify({ error: String(error), done: true }),
+    // Build the user message with search context
+    const enhancedMessage = searchContext
+      ? `${message}\n\n${searchContext}`
+      : message;
+
+    // Check if this is a multimodal request (has image)
+    const hasImage = imageBase64 && imageBase64.length > 0;
+
+    // Update session title if this is the first message
+    if (context.length <= 1) {
+      generateTitle(message).then((title) => {
+        updateSessionTitle(sessionId, title);
       });
     }
+
+    // Stream the response
+    return streamSSE(c, async (stream) => {
+      let fullContent = "";
+
+      try {
+        if (hasImage) {
+          // Use vision-capable streaming for image analysis
+          const multimodalMessages: MultimodalMessage[] = [
+            { role: "system", content: systemPrompt },
+            ...context.map((m) => ({
+              role: m.role as "user" | "assistant",
+              content: m.content,
+            })),
+            {
+              role: "user",
+              content: enhancedMessage,
+              images: [imageBase64], // Base64 image
+            },
+          ];
+
+          for await (const chunk of streamChatWithVision(multimodalMessages)) {
+            fullContent += chunk;
+            await stream.writeSSE({
+              data: JSON.stringify({ content: chunk, done: false }),
+            });
+          }
+        } else {
+          // Standard text chat
+          const messages: ChatMessage[] = [
+            { role: "system", content: systemPrompt },
+            ...context,
+            { role: "user", content: enhancedMessage },
+          ];
+
+          // Remove the last user message from context since we added enhanced version
+          messages.pop();
+          messages.push({ role: "user", content: enhancedMessage });
+
+          for await (const chunk of streamChat(messages)) {
+            fullContent += chunk;
+            await stream.writeSSE({
+              data: JSON.stringify({ content: chunk, done: false }),
+            });
+          }
+        }
+
+        // Save assistant message
+        await createMessage(sessionId, "assistant", fullContent);
+
+        await stream.writeSSE({
+          data: JSON.stringify({ content: "", done: true }),
+        });
+      } catch (error) {
+        console.error("Stream error:", error);
+        await stream.writeSSE({
+          data: JSON.stringify({ error: String(error), done: true }),
+        });
+      }
+    });
   });
-});
 
-// ============================================
-// Health Check
-// ============================================
+  // ============================================
+  // Health Check
+  // ============================================
 
-app.get("/health", async (c) => {
-  const dbOk = await healthCheck();
-  const ollamaOk = await checkOllamaHealth();
+  app.get("/health", async (c) => {
+    const dbOk = await healthCheck();
+    const ollamaOk = await checkOllamaHealth();
 
-  return c.json({
-    status: dbOk && ollamaOk ? "healthy" : "degraded",
-    database: dbOk ? "connected" : "disconnected",
-    ollama: ollamaOk ? "connected" : "disconnected",
-    timestamp: new Date().toISOString(),
+    return c.json({
+      status: dbOk && ollamaOk ? "healthy" : "degraded",
+      database: dbOk ? "connected" : "disconnected",
+      ollama: ollamaOk ? "connected" : "disconnected",
+      timestamp: new Date().toISOString(),
+    });
   });
-});
 
-// ============================================
-// Server Startup
-// ============================================
+  // ============================================
+  // Server Startup
+  // ============================================
 
-const port = parseInt(process.env.PORT || "3000");
+  const port = parseInt(process.env.PORT || "3000");
 
-console.log(`🚀 Starting chat.sudharsana.dev on port ${port}`);
+  console.log(`🚀 Starting chat.sudharsana.dev on port ${port}`);
 
-// Graceful shutdown
-process.on("SIGINT", async () => {
-  console.log("\nShutting down...");
-  await closeConnection();
-  process.exit(0);
-});
+  // Graceful shutdown
+  process.on("SIGINT", async () => {
+    console.log("\nShutting down...");
+    await closeConnection();
+    process.exit(0);
+  });
 
-process.on("SIGTERM", async () => {
-  console.log("\nShutting down...");
-  await closeConnection();
-  process.exit(0);
-});
+  process.on("SIGTERM", async () => {
+    console.log("\nShutting down...");
+    await closeConnection();
+    process.exit(0);
+  });
 
-export default {
-  port,
-  fetch: app.fetch,
-};
+  export default {
+    port,
+    fetch: app.fetch,
+  };

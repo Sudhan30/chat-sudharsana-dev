@@ -1,14 +1,30 @@
 /**
  * Ollama AI Integration with Streaming Support
- * Optimized for low-latency token streaming
+ * Supports multimodal (vision) and text generation
  */
 
 const OLLAMA_HOST = process.env.OLLAMA_HOST || "http://localhost:11434";
 const DEFAULT_MODEL = process.env.OLLAMA_MODEL || "gemma:latest";
 
+// Standard text-only message
 export interface ChatMessage {
   role: "user" | "assistant" | "system";
   content: string;
+}
+
+// Multimodal message with optional image(s)
+export interface MultimodalMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
+  images?: string[]; // Base64-encoded images
+}
+
+// Location context from browser geolocation
+export interface LocationContext {
+  latitude: number;
+  longitude: number;
+  city?: string;
+  country?: string;
 }
 
 export interface OllamaStreamChunk {
@@ -242,3 +258,118 @@ export function createSSEStream(
     },
   });
 }
+
+/**
+ * Stream chat with vision support (multimodal)
+ * Handles messages that may contain images
+ */
+export async function* streamChatWithVision(
+  messages: MultimodalMessage[],
+  options: ChatOptions = {}
+): AsyncGenerator<string, void, unknown> {
+  const model = options.model || DEFAULT_MODEL;
+
+  // Convert multimodal messages to Ollama format
+  const ollamaMessages = messages.map((msg) => ({
+    role: msg.role,
+    content: msg.content,
+    ...(msg.images && msg.images.length > 0 ? { images: msg.images } : {}),
+  }));
+
+  const response = await fetch(`${OLLAMA_HOST}/api/chat`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages: ollamaMessages,
+      stream: true,
+      options: {
+        temperature: options.temperature ?? 0.7,
+        num_ctx: options.num_ctx ?? 4096,
+      },
+      keep_alive: options.keep_alive ?? "5m",
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Ollama error: ${response.status} ${response.statusText}`);
+  }
+
+  if (!response.body) {
+    throw new Error("No response body from Ollama");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+
+        try {
+          const chunk: OllamaStreamChunk = JSON.parse(line);
+
+          if (chunk.message?.content) {
+            yield chunk.message.content;
+          }
+
+          if (chunk.done) {
+            return;
+          }
+        } catch (e) {
+          console.error("Failed to parse Ollama chunk:", line);
+        }
+      }
+    }
+
+    if (buffer.trim()) {
+      try {
+        const chunk: OllamaStreamChunk = JSON.parse(buffer);
+        if (chunk.message?.content) {
+          yield chunk.message.content;
+        }
+      } catch {
+        // Ignore
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+/**
+ * Build enhanced system prompt with location and capabilities
+ */
+export function buildSystemPrompt(
+  userName: string,
+  location?: LocationContext,
+  hasSearchEnabled = true
+): string {
+  let prompt = `You are a helpful, intelligent AI assistant. Be concise, accurate, and friendly. The user's name is ${userName}.`;
+
+  if (location) {
+    prompt += `\n\nThe user's current location is approximately: ${location.city || "Unknown city"}, ${location.country || "Unknown country"} (${location.latitude.toFixed(2)}, ${location.longitude.toFixed(2)}).`;
+  }
+
+  if (hasSearchEnabled) {
+    prompt += `\n\nYou have access to real-time web search results. When search results are provided, use them to give accurate, up-to-date information. Always cite your sources when using search results.`;
+  }
+
+  prompt += `\n\nYou can also analyze images. If the user sends an image, describe what you see in detail.`;
+
+  return prompt;
+}
+
