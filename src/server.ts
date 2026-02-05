@@ -485,18 +485,33 @@ async function loadMessages() {
 
 function appendMessage(role, content) {
   const isUser = role === 'user';
+  const renderedContent = isUser ? escapeHtml(content) : (marked && marked.parse ? marked.parse(content) : escapeHtml(content));
   const html = \`
-        <div class="flex items-start gap-3 \${isUser ? 'flex-row-reverse' : ''}">
+        <div class="flex items-start gap-3 mb-4 \${isUser ? 'flex-row-reverse' : ''}">
           <div class="w-8 h-8 rounded-full \${isUser ? 'bg-blue-600' : 'bg-green-600'} flex items-center justify-center text-sm font-bold flex-shrink-0">
             \${isUser ? 'You' : 'AI'}
           </div>
-          <div class="max-w-[70%] bg-dark-800 rounded-2xl \${isUser ? 'rounded-tr-none' : 'rounded-tl-none'} px-4 py-3">
-            <div class="message-content whitespace-pre-wrap">\${escapeHtml(content)}</div>
+          <div class="max-w-[70%] rounded-2xl \${isUser ? 'rounded-tr-none' : 'rounded-tl-none'} px-4 py-3" style="background-color: var(--bg-tertiary);">
+            <div class="message-content prose prose-invert max-w-none \${isUser ? '' : 'markdown-content'}">\${renderedContent}</div>
           </div>
         </div>
       \`;
       messageContainer.insertAdjacentHTML('beforeend', html);
     }
+
+    function toggleTheme() {
+      const html = document.documentElement;
+      const currentTheme = html.getAttribute('data-theme');
+      const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+      html.setAttribute('data-theme', newTheme);
+      localStorage.setItem('theme', newTheme);
+    }
+
+    // Load theme preference
+    (function() {
+      const savedTheme = localStorage.getItem('theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', savedTheme);
+    })();
 
     function escapeHtml(text) {
       const div = document.createElement('div');

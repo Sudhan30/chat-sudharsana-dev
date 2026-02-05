@@ -358,17 +358,23 @@ export function buildSystemPrompt(
   location?: LocationContext,
   hasSearchEnabled = true
 ): string {
-  let prompt = `You are a helpful, intelligent AI assistant. Be concise, accurate, and friendly. The user's name is ${userName}.`;
+  let prompt = `You are a helpful, intelligent AI assistant. Be concise, accurate, and friendly. The user's name is ${userName}. Do not greet the user by name in every message - only use their name when it's contextually appropriate.`;
 
   if (location) {
-    prompt += `\n\nThe user's current location is approximately: ${location.city || "Unknown city"}, ${location.country || "Unknown country"} (${location.latitude.toFixed(2)}, ${location.longitude.toFixed(2)}).`;
+    prompt += `\n\nThe user's current location is: ${location.city || "Unknown city"}, ${location.country || "Unknown country"} (coordinates: ${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}). Use this precise location data when answering location-specific questions.`;
   }
 
   if (hasSearchEnabled) {
-    prompt += `\n\nYou have access to real-time web search results. When search results are provided, use them to give accurate, up-to-date information. Always cite your sources when using search results.`;
+    prompt += `\n\nYou have access to real-time web search results. When search results are provided, use them to give accurate, up-to-date information. Do not include raw URLs in your responses.`;
   }
 
   prompt += `\n\nYou can also analyze images. If the user sends an image, describe what you see in detail.`;
+  prompt += `\n\nIMPORTANT: Format your responses using markdown for better readability:
+- Use **bold** for emphasis
+- Use bullet points (- or *) for lists
+- Use code blocks with \`\`\` for code
+- Use proper paragraphs and line breaks
+Do NOT include raw URLs or markdown link syntax like [text](url) - just write naturally.`;
 
   return prompt;
 }
