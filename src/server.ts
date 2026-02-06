@@ -29,7 +29,7 @@ import {
   type User,
 } from "./lib/db";
 
-import { notifyUserApprovalAction } from "./lib/slack";
+import { notifyUserApprovalAction } from "./lib/notify";
 
 import {
   streamChat,
@@ -1025,7 +1025,7 @@ app.get("/api/admin/approve", async (c) => {
       if (!user) {
         return c.html(renderAdminResult("error", "User not found"), 404);
       }
-      // Notify Slack about the approval
+      // Notify about the approval
       notifyUserApprovalAction(user.email, "approved").catch(console.error);
       return c.html(renderAdminResult("success", `User ${user.email} has been approved!`));
     } else {
@@ -1038,7 +1038,7 @@ app.get("/api/admin/approve", async (c) => {
       if (!deleted) {
         return c.html(renderAdminResult("error", "User was already approved or not found"), 400);
       }
-      // Notify Slack about the decline
+      // Notify about the decline
       notifyUserApprovalAction(email, "declined").catch(console.error);
       return c.html(renderAdminResult("success", `User ${email} has been declined and removed.`));
     }

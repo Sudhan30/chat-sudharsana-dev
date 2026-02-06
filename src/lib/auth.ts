@@ -11,7 +11,7 @@ import {
   deleteAuthToken,
   type User,
 } from "./db";
-import { notifyNewUserSignup } from "./slack";
+import { notifyNewUserSignup } from "./notify";
 
 const TOKEN_EXPIRY_DAYS = 7;
 
@@ -74,13 +74,13 @@ export async function signup(
   const passwordHash = await hashPassword(password);
   const user = await createUser(email, passwordHash, name);
 
-  // Send Slack notification for approval (don't await to avoid blocking)
+  // Send notification for approval (don't await to avoid blocking)
   notifyNewUserSignup({
     email: user.email,
     name: user.name,
     userId: user.id,
     createdAt: user.created_at,
-  }).catch((err) => console.error("Failed to send Slack notification:", err));
+  }).catch((err) => console.error("Failed to send notification:", err));
 
   // Create auth token
   const token = generateToken();
