@@ -27,15 +27,21 @@ export async function notifyNewUserSignup(payload: NotificationPayload): Promise
   const declineUrl = `${APP_URL}/api/admin/approve?userId=${userId}&action=decline`;
 
   const message = {
-    title: "New User Signup",
-    message: `Email: ${email}
-Name: ${name || "Not provided"}
-Time: ${createdAt.toLocaleString()}
+    title: "🔔 New User Signup",
+    message: `**Email:** ${email}
+**Name:** ${name || "Not provided"}
+**Time:** ${createdAt.toLocaleString()}
 
-Approve: ${approveUrl}
-Decline: ${declineUrl}`,
+---
+
+[✅ **APPROVE**](${approveUrl})
+
+[❌ **DECLINE**](${declineUrl})`,
     priority: 8,
     extras: {
+      "client::display": {
+        contentType: "text/markdown"
+      },
       "client::notification": {
         click: { url: approveUrl }
       }
