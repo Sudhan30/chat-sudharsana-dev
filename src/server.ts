@@ -110,13 +110,92 @@ const authMiddleware = async (c: any, next: () => Promise<void>) => {
 // HTML Rendering Functions
 // ============================================
 
-const renderLayout = (content: string, title = "Chat") => `
-<!DOCTYPE html>
+const renderLayout = (content: string, title = "Chat") => {
+  const pageTitle = `${title} | chat.sudharsana.dev`;
+  const description = "AI-powered chat application with web search, vision capabilities, and intelligent conversation summaries. Built by Sudharsana Rajasekaran.";
+  const canonicalUrl = "https://chat.sudharsana.dev/";
+  const ogImage = "https://chat.sudharsana.dev/og-image.jpg";
+
+  return `<!DOCTYPE html>
 <html lang="en" class="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title} | chat.sudharsana.dev</title>
+  <title>${pageTitle}</title>
+
+  <!-- Primary Meta Tags -->
+  <meta name="description" content="${description}" />
+  <meta name="keywords" content="AI Chat, Ollama, LLM, Web Search, Vision AI, Multimodal AI, Chat Application, Sudharsana Rajasekaran" />
+  <meta name="author" content="Sudharsana Rajasekaran" />
+  <meta name="robots" content="index, follow" />
+  <meta name="language" content="English" />
+  <link rel="canonical" href="${canonicalUrl}" />
+
+  <!-- AI Citation Meta Tags (Generative Engine Optimization) -->
+  <meta name="citation_author" content="Sudharsana Rajasekaran" />
+  <meta name="citation_title" content="${pageTitle}" />
+  <meta name="DC.creator" content="Sudharsana Rajasekaran" />
+  <meta name="DC.title" content="${pageTitle}" />
+  <meta name="DC.publisher" content="chat.sudharsana.dev" />
+  <meta name="DC.identifier" content="${canonicalUrl}" />
+  <meta name="DC.type" content="Software" />
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="${canonicalUrl}" />
+  <meta property="og:title" content="${pageTitle}" />
+  <meta property="og:description" content="${description}" />
+  <meta property="og:image" content="${ogImage}" />
+  <meta property="og:site_name" content="chat.sudharsana.dev" />
+  <meta property="og:locale" content="en_US" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:url" content="${canonicalUrl}" />
+  <meta name="twitter:title" content="${pageTitle}" />
+  <meta name="twitter:description" content="${description}" />
+  <meta name="twitter:image" content="${ogImage}" />
+
+  <!-- Geo Tags -->
+  <meta name="geo.region" content="US-CA" />
+  <meta name="geo.placename" content="San Francisco Bay Area" />
+  <meta name="geo.position" content="37.7749;-122.4194" />
+  <meta name="ICBM" content="37.7749, -122.4194" />
+
+  <!-- JSON-LD Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "chat.sudharsana.dev",
+    "description": "${description}",
+    "url": "${canonicalUrl}",
+    "applicationCategory": "CommunicationApplication",
+    "operatingSystem": "Web Browser",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "author": {
+      "@type": "Person",
+      "name": "Sudharsana Rajasekaran",
+      "url": "https://sudharsana.dev"
+    },
+    "provider": {
+      "@type": "Person",
+      "name": "Sudharsana Rajasekaran"
+    },
+    "featureList": [
+      "AI-powered chat conversations",
+      "Web search integration",
+      "Vision and image analysis",
+      "Conversation summaries",
+      "Location-aware responses"
+    ]
+  }
+  </script>
+
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script>
@@ -218,6 +297,7 @@ const renderLayout = (content: string, title = "Chat") => `
 </body>
 </html>
 `;
+};
 
 const renderLogin = (error?: string) => renderLayout(`
   <div class="min-h-screen flex items-center justify-center p-4">
@@ -699,6 +779,20 @@ function appendMessage(role, content) {
 // ============================================
 
 app.get("/", (c) => c.redirect("/chat"));
+
+// SEO files
+app.get("/robots.txt", async (c) => {
+  const file = Bun.file("./public/robots.txt");
+  const content = await file.text();
+  return c.text(content);
+});
+
+app.get("/sitemap.xml", async (c) => {
+  const file = Bun.file("./public/sitemap.xml");
+  const content = await file.text();
+  c.header("Content-Type", "application/xml");
+  return c.body(content);
+});
 
 // Serve blog page
 app.get("/blog", async (c) => {

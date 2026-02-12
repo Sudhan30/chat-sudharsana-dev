@@ -1,0 +1,65 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /chat/
+Disallow: /login
+Disallow: /signup
+Disallow: /logout
+
+# Sitemap location
+Sitemap: https://chat.sudharsana.dev/sitemap.xml
+
+# Crawl delay for polite bots
+Crawl-delay: 1
+
+# AI Crawler Bots (Generative Engine Optimization)
+# Allow AI chatbots to index and cite public content
+
+# ChatGPT (OpenAI)
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /api/
+Disallow: /chat/
+
+# GPTBot (OpenAI training)
+User-agent: GPTBot
+Allow: /
+Disallow: /api/
+Disallow: /chat/
+
+# Google Gemini
+User-agent: Google-Extended
+Allow: /
+Disallow: /api/
+Disallow: /chat/
+
+# Anthropic Claude
+User-agent: ClaudeBot
+Allow: /
+Disallow: /api/
+Disallow: /chat/
+
+# Perplexity AI
+User-agent: PerplexityBot
+Allow: /
+Disallow: /api/
+Disallow: /chat/
+
+# Common Crawl (used by many AI models)
+User-agent: CCBot
+Allow: /
+Disallow: /api/
+Disallow: /chat/
+
+# Meta AI
+User-agent: FacebookBot
+Allow: /
+Disallow: /api/
+Disallow: /chat/
+
+# Block aggressive SEO bots
+User-agent: AhrefsBot
+Crawl-delay: 10
+
+User-agent: SemrushBot
+Crawl-delay: 10
