@@ -128,6 +128,21 @@ export function formatSearchContext(results: SearchResult[]): string {
 export function shouldSearchWeb(message: string): boolean {
     const lowerMsg = message.toLowerCase();
 
+    // Skip web search if the message looks like a database/data agent query
+    const dataAgentKeywords = [
+        "blog", "comments", "likes", "posts", "visitors",
+        "trades", "trading", "p&l", "pnl", "profit", "loss",
+        "positions", "portfolio", "orders", "signals", "strategy",
+        "market data", "backtest", "database", "db",
+        "how many comments", "how many likes", "how many trades",
+        "how many posts", "how many visitors",
+        "query", "sql", "table",
+    ];
+
+    for (const keyword of dataAgentKeywords) {
+        if (lowerMsg.includes(keyword)) return false;
+    }
+
     // Keywords that suggest need for current information
     const searchTriggers = [
         "today",

@@ -34,20 +34,22 @@ import { notifyUserApprovalAction } from "./lib/notify";
 import {
   streamChat,
   streamChatWithVision,
+  chatWithTools,
   generateTitle,
   checkOllamaHealth,
   buildSystemPrompt,
   type ChatMessage,
   type MultimodalMessage,
   type LocationContext,
+  type AgentStreamEvent,
 } from "./lib/ai";
 
 import {
-  searchWeb,
-  shouldSearchWeb,
-  formatSearchContext,
-  checkSearchHealth,
-} from "./lib/search";
+  checkAgentDbHealth,
+  closeAgentConnections,
+} from "./lib/agent";
+
+import { checkSearchHealth } from "./lib/search";
 
 import {
   signup,
@@ -289,6 +291,13 @@ const renderLayout = (content: string, title = "Chat") => {
     /* Streaming text (before markdown render) */
     .streaming-text {
       white-space: pre-wrap;
+    }
+    /* Agent status spinner */
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .animate-spin {
+      animation: spin 1s linear infinite;
     }
   </style>
 </head>
@@ -743,6 +752,17 @@ function appendMessage(role, content) {
                   contentDiv.parentElement.insertBefore(metaDiv, contentDiv.parentElement.firstChild);
                 }
 
+                // Handle data agent status (querying database...)
+                if (data.type === 'status') {
+                  let statusDiv = contentDiv.parentElement.querySelector('.agent-status');
+                  if (!statusDiv) {
+                    statusDiv = document.createElement('div');
+                    statusDiv.className = 'agent-status text-xs text-emerald-400 mb-2 flex items-center gap-1';
+                    contentDiv.parentElement.insertBefore(statusDiv, contentDiv);
+                  }
+                  statusDiv.innerHTML = '<svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> ' + data.content;
+                }
+
                 if (data.content) {
                   fullContent += data.content;
                   contentDiv.textContent = fullContent;
@@ -992,32 +1012,13 @@ app.post("/api/chat", authMiddleware, async (c) => {
     };
   }
 
-  // Check if we should perform a web search
-  let searchContext = "";
-  if (shouldSearchWeb(message)) {
-    console.log(`🔍 Performing web search for: ${message}`);
-    // Pass location to search for location-aware queries (weather, nearby, etc.)
-    const results = await searchWeb(message, 5, locationContext ? {
-      city: locationContext.city,
-      country: locationContext.country,
-    } : undefined);
-    searchContext = formatSearchContext(results);
-    if (searchContext) {
-      console.log(`✅ Found ${results.length} search results`);
-    }
-  }
-
-  // Build system prompt with location and capabilities
+  // Build system prompt with location, search (as tool), and data agent capabilities
   const systemPrompt = buildSystemPrompt(
     user.name || "there",
     locationContext,
-    true // search enabled
+    true, // search enabled (as tool)
+    true  // data agent enabled
   );
-
-  // Build the user message with search context
-  const enhancedMessage = searchContext
-    ? `${message}\n\n${searchContext}`
-    : message;
 
   // Check if this is a multimodal request (has image)
   const hasImage = imageBase64 && imageBase64.length > 0;
@@ -1034,13 +1035,6 @@ app.post("/api/chat", authMiddleware, async (c) => {
     let fullContent = "";
 
     try {
-      // Send search metadata if search was performed
-      if (searchContext) {
-        await stream.writeSSE({
-          data: JSON.stringify({ type: 'meta', search: true, query: message }),
-        });
-      }
-
       if (hasImage) {
         // Use vision-capable streaming for image analysis
         const multimodalMessages: MultimodalMessage[] = [
@@ -1051,7 +1045,7 @@ app.post("/api/chat", authMiddleware, async (c) => {
           })),
           {
             role: "user",
-            content: enhancedMessage,
+            content: message,
             images: [imageBase64], // Base64 image
           },
         ];
@@ -1063,22 +1057,39 @@ app.post("/api/chat", authMiddleware, async (c) => {
           });
         }
       } else {
-        // Standard text chat
+        // Text chat with tool calling (data agent + web search)
         const messages: ChatMessage[] = [
           { role: "system", content: systemPrompt },
           ...context,
-          { role: "user", content: enhancedMessage },
         ];
 
-        // Remove the last user message from context since we added enhanced version
-        messages.pop();
-        messages.push({ role: "user", content: enhancedMessage });
+        // Remove duplicate last user message and add current message
+        if (messages.length > 1 && messages[messages.length - 1].role === "user") {
+          messages.pop();
+        }
+        messages.push({ role: "user", content: message });
 
-        for await (const chunk of streamChat(messages)) {
-          fullContent += chunk;
-          await stream.writeSSE({
-            data: JSON.stringify({ content: chunk, done: false }),
-          });
+        const searchLocation = locationContext
+          ? { city: locationContext.city, country: locationContext.country }
+          : undefined;
+
+        for await (const event of chatWithTools(messages, {}, searchLocation)) {
+          if (event.type === "status") {
+            // Send status indicator to client (e.g., "Querying database...")
+            await stream.writeSSE({
+              data: JSON.stringify({
+                type: "status",
+                content: event.content,
+                done: false,
+              }),
+            });
+          } else if (event.type === "text") {
+            fullContent += event.content;
+            await stream.writeSSE({
+              data: JSON.stringify({ content: event.content, done: false }),
+            });
+          }
+          // tool_result events are internal - not sent to client
         }
       }
 
@@ -1204,11 +1215,16 @@ function renderAdminResult(status: "success" | "error", message: string): string
 app.get("/health", async (c) => {
   const dbOk = await healthCheck();
   const ollamaOk = await checkOllamaHealth();
+  const agentDbs = await checkAgentDbHealth();
 
   return c.json({
     status: dbOk && ollamaOk ? "healthy" : "degraded",
     database: dbOk ? "connected" : "disconnected",
     ollama: ollamaOk ? "connected" : "disconnected",
+    agent: {
+      blogDb: agentDbs.blogDb ? "connected" : "disconnected",
+      tradingDb: agentDbs.tradingDb ? "connected" : "disconnected",
+    },
     timestamp: new Date().toISOString(),
   });
 });
@@ -1225,12 +1241,14 @@ console.log(`🚀 Starting chat.sudharsana.dev on port ${port}`);
 process.on("SIGINT", async () => {
   console.log("\nShutting down...");
   await closeConnection();
+  await closeAgentConnections();
   process.exit(0);
 });
 
 process.on("SIGTERM", async () => {
   console.log("\nShutting down...");
   await closeConnection();
+  await closeAgentConnections();
   process.exit(0);
 });
 

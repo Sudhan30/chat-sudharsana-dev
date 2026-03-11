@@ -1,7 +1,15 @@
 /**
  * Ollama AI Integration with Streaming Support
- * Supports multimodal (vision) and text generation
+ * Supports multimodal (vision), text generation, and tool calling
  */
+
+import {
+  SCHEMA_CONTEXT,
+  SQL_EXAMPLES,
+  DATA_AGENT_TOOLS,
+  handleToolCall,
+  type QueryResult,
+} from "./agent";
 
 const OLLAMA_HOST = process.env.OLLAMA_HOST || "http://localhost:11434";
 const DEFAULT_MODEL = process.env.OLLAMA_MODEL || "gemma:latest";
@@ -350,13 +358,147 @@ export async function* streamChatWithVision(
   }
 }
 
+// ============================================
+// Tool Call Types
+// ============================================
+
+interface OllamaToolCall {
+  function: {
+    name: string;
+    arguments: Record<string, unknown>;
+  };
+}
+
+interface OllamaToolResponse {
+  model: string;
+  message: {
+    role: string;
+    content: string;
+    tool_calls?: OllamaToolCall[];
+  };
+  done: boolean;
+}
+
+export interface AgentStreamEvent {
+  type: "text" | "status" | "tool_result";
+  content: string;
+}
+
+/**
+ * Chat with tool calling support for data agent
+ * Makes a non-streaming call first to check for tool calls,
+ * then streams the final response
+ */
+export async function* chatWithTools(
+  messages: ChatMessage[],
+  options: ChatOptions = {},
+  locationContext?: { city?: string; country?: string }
+): AsyncGenerator<AgentStreamEvent, void, unknown> {
+  const model = options.model || DEFAULT_MODEL;
+  const MAX_TOOL_ROUNDS = 3;
+
+  let currentMessages = [...messages];
+
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    // Non-streaming call to check for tool calls
+    const response = await fetch(`${OLLAMA_HOST}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        messages: currentMessages,
+        tools: DATA_AGENT_TOOLS,
+        stream: false,
+        options: {
+          temperature: options.temperature ?? 0.3,
+          num_ctx: options.num_ctx ?? 8192,
+        },
+        keep_alive: options.keep_alive ?? "5m",
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Ollama error: ${response.status} ${response.statusText}`);
+    }
+
+    const data: OllamaToolResponse = await response.json();
+
+    // Check if model wants to call tools
+    if (data.message?.tool_calls && data.message.tool_calls.length > 0) {
+      // Add assistant's tool call message to history
+      currentMessages.push({
+        role: "assistant",
+        content: data.message.content || "",
+      });
+
+      for (const toolCall of data.message.tool_calls) {
+        const fnName = toolCall.function.name;
+        const args = toolCall.function.arguments;
+
+        const statusLabel =
+          fnName === "search_web"
+            ? "Searching the web..."
+            : fnName === "query_blog_db"
+              ? "Querying blog database..."
+              : "Querying trading database...";
+
+        yield { type: "status", content: statusLabel };
+
+        console.log(`[Agent] Tool call: ${fnName}`, JSON.stringify(args));
+
+        const result: QueryResult = await handleToolCall(fnName, args, locationContext);
+
+        yield {
+          type: "tool_result",
+          content: JSON.stringify(result),
+        };
+
+        console.log(
+          `[Agent] Tool result: ${result.success ? result.rowCount + " rows" : result.error}`
+        );
+
+        // Add tool result to messages
+        currentMessages.push({
+          role: "tool" as any,
+          content: JSON.stringify(
+            result.success ? result.data : { error: result.error }
+          ),
+        });
+      }
+
+      // Continue loop - model may need another tool call or will give final answer
+      continue;
+    }
+
+    // No tool calls - stream the final response
+    if (data.message?.content) {
+      // Model already gave a complete response in non-streaming mode
+      // Yield it as text chunks for consistent streaming UX
+      yield { type: "text", content: data.message.content };
+      return;
+    }
+
+    // Fallback: stream normally if no content in tool response
+    for await (const chunk of streamChat(currentMessages, options)) {
+      yield { type: "text", content: chunk };
+    }
+    return;
+  }
+
+  // If we exhausted tool rounds, stream a final response
+  for await (const chunk of streamChat(currentMessages, options)) {
+    yield { type: "text", content: chunk };
+  }
+}
+
 /**
  * Build enhanced system prompt with location and capabilities
  */
 export function buildSystemPrompt(
   userName: string,
   location?: LocationContext,
-  hasSearchEnabled = true
+  hasSearchEnabled = true,
+  hasDataAgent = true
 ): string {
   // Get current date in a clear format
   const now = new Date();
@@ -391,7 +533,7 @@ IMPORTANT: When the user asks about weather, local businesses, nearby places, or
   if (hasSearchEnabled) {
     prompt += `
 
-WEB SEARCH: You have access to real-time web search results. When search results are provided in the context, use them to give accurate, up-to-date information. Always prefer search results over your training data for current information. When searching for location-specific info like weather, ALWAYS use the user's actual location provided above.`;
+WEB SEARCH: You have access to a search_web tool. Use it when the user asks about current events, weather, news, prices, sports scores, release dates, or anything requiring up-to-date information from the internet. Do NOT use it for questions about the user's own data — use the database query tools instead.`;
   }
 
   prompt += `
@@ -405,6 +547,17 @@ RESPONSE FORMAT:
 - Do NOT include raw URLs or markdown links like [text](url)
 - Do NOT add extra blank lines before or after lists
 - Start responses directly with content (no greeting every time)`;
+
+  if (hasDataAgent) {
+    prompt += `
+
+DATA AGENT CAPABILITIES:
+You have access to query two databases using SQL tools. When the user asks about blog stats, comments, likes, trades, P&L, positions, portfolio, market data, strategies, or any data question, use the appropriate query tool.
+Write precise, correct SQL. Only use SELECT queries. For TimescaleDB hypertables, use time_bucket() for time-based grouping. All timestamps are in UTC.
+When you receive query results, present them in a clear, human-friendly format using markdown tables or bullet points. Include relevant numbers, percentages, and context.
+${SCHEMA_CONTEXT}
+${SQL_EXAMPLES}`;
+  }
 
   return prompt;
 }
