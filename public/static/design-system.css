@@ -1,0 +1,336 @@
+/* ============================================
+   chat.sudharsana.dev — Design System
+   Blue primary · dark + light themes
+   Source: sudharsana-chat-design-system
+   ============================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap');
+
+:root, [data-theme="dark"] {
+  --canvas:    #0a0f1c;
+  --canvas-2:  #0f172a;
+  --surface:   #151f33;
+  --surface-2: #1e293b;
+  --surface-3: #293548;
+
+  --blue-400: #60a5fa;
+  --blue-500: #3b82f6;
+  --blue-600: #2563eb;
+  --blue-700: #1d4ed8;
+  --blue-glow: rgba(59,130,246,0.35);
+
+  --amber-300: #fcd34d; --amber-400: #fbbf24; --amber-500: #f59e0b;
+  --green-500: #10b981; --red-500: #ef4444; --yellow-500: #eab308;
+  --purple-400: #a78bfa; --cyan-400: #22d3ee;
+
+  --fg-1: #f1f5f9;
+  --fg-2: #cbd5e1;
+  --fg-3: #94a3b8;
+  --fg-4: #64748b;
+  --fg-inverse: #0f172a;
+
+  --border-1: rgba(148,163,184,0.10);
+  --border-2: rgba(148,163,184,0.18);
+  --border-3: rgba(148,163,184,0.28);
+  --border-focus: var(--blue-500);
+
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.35);
+  --shadow-lg: 0 12px 40px rgba(0,0,0,0.45);
+  --shadow-glow: 0 0 0 1px rgba(59,130,246,0.3), 0 6px 24px rgba(59,130,246,0.25);
+  --ring-focus: 0 0 0 2px var(--canvas), 0 0 0 4px var(--blue-500);
+
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --canvas:    #fafbfc;
+  --canvas-2:  #f1f4f8;
+  --surface:   #ffffff;
+  --surface-2: #f1f4f8;
+  --surface-3: #e4e9f0;
+
+  --blue-400: #3b82f6;
+  --blue-500: #2563eb;
+  --blue-600: #2563eb;
+  --blue-700: #1d4ed8;
+  --blue-glow: rgba(37,99,235,0.18);
+
+  --amber-300: #d97706; --amber-400: #b45309; --amber-500: #92400e;
+  --green-500: #059669; --red-500: #dc2626; --yellow-500: #ca8a04;
+  --purple-400: #7c3aed; --cyan-400: #0891b2;
+
+  --fg-1: #0f172a;
+  --fg-2: #334155;
+  --fg-3: #64748b;
+  --fg-4: #94a3b8;
+  --fg-inverse: #ffffff;
+
+  --border-1: rgba(15,23,42,0.06);
+  --border-2: rgba(15,23,42,0.10);
+  --border-3: rgba(15,23,42,0.18);
+
+  --shadow-sm: 0 1px 2px rgba(15,23,42,0.04);
+  --shadow-md: 0 4px 16px rgba(15,23,42,0.08);
+  --shadow-lg: 0 12px 40px rgba(15,23,42,0.12);
+  --shadow-glow: 0 0 0 1px rgba(37,99,235,0.25), 0 6px 24px rgba(37,99,235,0.18);
+  --ring-focus: 0 0 0 2px var(--canvas), 0 0 0 4px var(--blue-500);
+
+  color-scheme: light;
+}
+
+:root {
+  --radius-xs:4px; --radius-sm:6px; --radius-md:10px; --radius-lg:14px;
+  --radius-xl:20px; --radius-2xl:28px; --radius-full:999px;
+  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px;
+  --space-5:20px; --space-6:24px; --space-8:32px; --space-10:40px;
+  --space-12:48px; --space-16:64px;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Instrument Serif', 'Georgia', serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --text-xs:12px; --text-sm:13px; --text-base:15px; --text-md:16px;
+  --text-lg:18px; --text-xl:22px; --text-2xl:28px; --text-3xl:36px;
+  --text-4xl:48px; --text-5xl:64px;
+  --leading-tight:1.15; --leading-snug:1.3; --leading-normal:1.55; --leading-loose:1.7;
+  --tracking-tight:-0.02em; --tracking-normal:0; --tracking-wide:0.06em;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur-fast:120ms; --dur-base:200ms; --dur-slow:400ms;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body { margin: 0; padding: 0; }
+html, body, #root { height: 100%; }
+
+body {
+  background: var(--canvas);
+  color: var(--fg-1);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background 200ms var(--ease-out), color 200ms var(--ease-out);
+}
+
+h1, .h1 { font-size: var(--text-4xl); font-weight: 700; line-height: var(--leading-tight); letter-spacing: var(--tracking-tight); color: var(--fg-1); margin: 0; }
+h2, .h2 { font-size: var(--text-2xl); font-weight: 600; line-height: var(--leading-snug); letter-spacing: var(--tracking-tight); color: var(--fg-1); margin: 0; }
+h3, .h3 { font-size: var(--text-xl); font-weight: 600; line-height: var(--leading-snug); color: var(--fg-1); margin: 0; }
+h4, .h4 { font-size: var(--text-lg); font-weight: 600; line-height: var(--leading-snug); color: var(--fg-1); margin: 0; }
+p, .body { font-size: var(--text-base); line-height: var(--leading-normal); color: var(--fg-2); }
+.display { font-family: var(--font-display); font-weight: 400; font-size: var(--text-5xl); line-height: 1.05; letter-spacing: -0.03em; color: var(--fg-1); }
+.caption { font-size: var(--text-xs); color: var(--fg-3); letter-spacing: var(--tracking-wide); text-transform: uppercase; font-weight: 500; }
+.meta { font-size: var(--text-sm); color: var(--fg-3); }
+
+code, .code, pre { font-family: var(--font-mono); font-size: 0.92em; }
+:not(pre) > code {
+  background: var(--surface-2);
+  padding: 0.1em 0.4em;
+  border-radius: var(--radius-xs);
+  color: var(--amber-300);
+  border: 1px solid var(--border-1);
+}
+pre {
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  overflow-x: auto;
+  font-size: var(--text-sm);
+  line-height: var(--leading-snug);
+  margin: var(--space-3) 0;
+}
+
+a { color: var(--blue-500); text-decoration: none; transition: color var(--dur-fast) var(--ease-out); }
+a:hover { color: var(--blue-600); }
+
+::selection { background: var(--blue-glow); color: var(--fg-1); }
+
+.scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+.scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: var(--radius-full); }
+.scrollbar-thin::-webkit-scrollbar-thumb:hover { background: var(--fg-4); }
+
+/* Motion ---------------------------------------------------- */
+@keyframes pulse-dot   { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+@keyframes chat-spin   { to { transform: rotate(360deg); } }
+@keyframes chat-fade   { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+.animate-spin { animation: chat-spin 1s linear infinite; }
+
+.typing-indicator span { animation: pulse-dot 1.4s infinite; }
+.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+/* Primitives ------------------------------------------------ */
+.ds-btn-primary {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 10px 14px; border: none; border-radius: var(--radius-md);
+  background: var(--blue-600); color: #fff; font: 500 14px var(--font-sans);
+  cursor: pointer; transition: background var(--dur-fast) var(--ease-out);
+}
+.ds-btn-primary:hover { background: var(--blue-700); }
+.ds-btn-primary:focus-visible { outline: none; box-shadow: var(--ring-focus); }
+.ds-btn-primary:disabled { opacity: 0.6; cursor: default; }
+
+.ds-btn-ghost {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: var(--radius-sm);
+  background: transparent; color: var(--fg-3); border: none; cursor: pointer;
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.ds-btn-ghost:hover { background: var(--surface-2); color: var(--fg-1); }
+
+.ds-input {
+  width: 100%; padding: 11px 14px;
+  background: var(--surface-2); color: var(--fg-1);
+  border: 1px solid var(--border-2); border-radius: var(--radius-md);
+  font: 400 15px var(--font-sans); outline: none;
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.ds-input::placeholder { color: var(--fg-4); }
+.ds-input:focus { border-color: transparent; box-shadow: var(--ring-focus); }
+
+/* Logo mark ------------------------------------------------- */
+.ds-logo {
+  position: relative; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--surface); border: 1px solid var(--border-2);
+}
+.ds-logo-char {
+  font-family: var(--font-display); font-style: italic;
+  color: var(--fg-1); line-height: 1;
+}
+.ds-logo-dot {
+  position: absolute; border-radius: 50%; background: var(--blue-500);
+}
+
+/* Status pills --------------------------------------------- */
+.ds-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono); font-size: 11px;
+  padding: 4px 10px; border-radius: var(--radius-full);
+  border: 1px solid var(--border-2); background: var(--surface);
+  animation: chat-fade 200ms var(--ease-out);
+}
+.ds-pill .ds-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.ds-pill-search { color: var(--blue-400); }
+.ds-pill-agent  { color: var(--amber-300); }
+.ds-pill-tool   { color: var(--purple-400); }
+.ds-pill-ok     { color: var(--green-500); }
+
+/* Message bubble markdown styles --------------------------- */
+.message-content { line-height: 1.6; color: inherit; }
+.message-content p { margin: 0 0 0.75rem 0; }
+.message-content p:last-child { margin-bottom: 0; }
+.message-content ul, .message-content ol { margin: 0.5rem 0; padding-left: 1.4rem; }
+.message-content li { margin-bottom: 0.25rem; }
+.message-content strong { font-weight: 600; color: var(--fg-1); }
+.message-content em { font-style: italic; }
+.message-content h1, .message-content h2, .message-content h3 {
+  font-weight: 600; margin: 1rem 0 0.5rem; color: var(--fg-1);
+}
+.message-content h1 { font-size: 1.3rem; }
+.message-content h2 { font-size: 1.15rem; }
+.message-content h3 { font-size: 1.05rem; }
+.message-content hr { border: none; border-top: 1px solid var(--border-2); margin: 1rem 0; }
+.message-content blockquote {
+  border-left: 3px solid var(--blue-500);
+  padding-left: 1rem; margin: 0.75rem 0; color: var(--fg-3);
+}
+.message-content pre { margin: 0.75rem 0; }
+.message-content table {
+  border-collapse: collapse; margin: 0.75rem 0; font-size: 0.95em;
+}
+.message-content th, .message-content td {
+  border: 1px solid var(--border-2); padding: 6px 10px; text-align: left;
+}
+.message-content th { background: var(--surface-2); font-weight: 600; }
+
+/* Bubble-specific: invert inline code/strong on user bubbles */
+.ds-bubble-user .message-content strong { color: #fff; }
+.ds-bubble-user .message-content :not(pre) > code {
+  background: rgba(255,255,255,0.14); color: #fff; border-color: rgba(255,255,255,0.18);
+}
+.ds-bubble-user a { color: #fff; text-decoration: underline; }
+
+.streaming-text { white-space: pre-wrap; }
+
+/* Backdrop blur for mobile sidebar + top bar --------------- */
+.ds-backdrop {
+  background: color-mix(in srgb, var(--canvas) 70%, transparent);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.ds-sticky-bar {
+  background: color-mix(in srgb, var(--canvas) 82%, transparent);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+}
+
+/* Prompt chips (empty state) ------------------------------ */
+.ds-chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 14px; border-radius: var(--radius-full);
+  background: var(--surface); border: 1px solid var(--border-2);
+  color: var(--fg-2); font-size: 13px; cursor: pointer;
+  font-family: var(--font-sans);
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.ds-chip:hover { background: var(--surface-2); color: var(--fg-1); border-color: var(--border-3); }
+
+/* Send button glow ---------------------------------------- */
+.ds-send {
+  width: 36px; height: 36px; border-radius: var(--radius-full); border: none;
+  background: var(--blue-600); color: #fff; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 14px var(--blue-glow);
+  transition: all var(--dur-fast) var(--ease-out);
+}
+.ds-send:hover:not(:disabled) { background: var(--blue-700); transform: translateY(-1px); }
+.ds-send:disabled { background: var(--surface-3); box-shadow: none; cursor: default; }
+
+/* Session entry ------------------------------------------- */
+.ds-session {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 9px 12px; margin-bottom: 2px;
+  background: transparent; border: none; border-radius: var(--radius-md);
+  color: var(--fg-2); font: 400 13px var(--font-sans); text-align: left;
+  cursor: pointer; position: relative; text-decoration: none;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.ds-session:hover { background: var(--surface); color: var(--fg-1); }
+.ds-session.is-active { background: var(--surface-2); color: var(--fg-1); }
+.ds-session.is-active::before {
+  content: ""; position: absolute; left: 4px; top: 50%; transform: translateY(-50%);
+  width: 2px; height: 16px; background: var(--blue-500); border-radius: 2px;
+}
+.ds-session-title {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ds-session-time {
+  font-size: 10px; color: var(--fg-4); font-family: var(--font-mono); flex-shrink: 0;
+}
+
+/* Composer ------------------------------------------------ */
+.ds-composer-shell {
+  display: flex; align-items: flex-end; gap: 6px; padding: 8px;
+  background: var(--surface); border: 1px solid var(--border-2);
+  border-radius: var(--radius-xl);
+  transition: box-shadow var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+.ds-composer-shell:focus-within {
+  border-color: transparent;
+  box-shadow: 0 0 0 2px var(--canvas), 0 0 0 4px var(--blue-500);
+}
+.ds-composer-textarea {
+  flex: 1; background: transparent; border: none; outline: none; resize: none;
+  color: var(--fg-1); font-family: var(--font-sans); font-size: 15px;
+  line-height: 1.5; padding: 8px 4px; min-height: 24px; max-height: 200px;
+}
+.ds-composer-textarea::placeholder { color: var(--fg-4); }
+
+/* Auth card glow ------------------------------------------ */
+.ds-auth-glow {
+  position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background: radial-gradient(1000px 500px at 50% -10%, var(--blue-glow), transparent);
+}
