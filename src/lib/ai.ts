@@ -12,7 +12,7 @@ import {
 } from "./agent";
 
 const OLLAMA_HOST = process.env.OLLAMA_HOST || "http://localhost:11434";
-const DEFAULT_MODEL = process.env.OLLAMA_MODEL || "gemma:latest";
+const CHAT_MODEL = process.env.OLLAMA_MODEL || "gemma4:latest";
 
 // Standard text-only message
 export interface ChatMessage {
@@ -65,7 +65,7 @@ export async function* streamChat(
   messages: ChatMessage[],
   options: ChatOptions = {}
 ): AsyncGenerator<string, void, unknown> {
-  const model = options.model || DEFAULT_MODEL;
+  const model = options.model || CHAT_MODEL;
 
   const response = await fetch(`${OLLAMA_HOST}/api/chat`, {
     method: "POST",
@@ -151,7 +151,7 @@ export async function chat(
   messages: ChatMessage[],
   options: ChatOptions = {}
 ): Promise<string> {
-  const model = options.model || DEFAULT_MODEL;
+  const model = options.model || CHAT_MODEL;
 
   const response = await fetch(`${OLLAMA_HOST}/api/chat`, {
     method: "POST",
@@ -275,7 +275,7 @@ export async function* streamChatWithVision(
   messages: MultimodalMessage[],
   options: ChatOptions = {}
 ): AsyncGenerator<string, void, unknown> {
-  const model = options.model || DEFAULT_MODEL;
+  const model = options.model || CHAT_MODEL;
 
   // Convert multimodal messages to Ollama format
   const ollamaMessages = messages.map((msg) => ({
@@ -359,61 +359,56 @@ export async function* streamChatWithVision(
 }
 
 // ============================================
-// Tool Call Types
+// Native Tool Calling (Gemma4 / single-model)
+// Gemma4 has native function calling, so the same model
+// detects intent, calls tools, and formats results.
 // ============================================
-
-interface OllamaToolCall {
-  function: {
-    name: string;
-    arguments: Record<string, unknown>;
-  };
-}
-
-interface OllamaToolResponse {
-  model: string;
-  message: {
-    role: string;
-    content: string;
-    tool_calls?: OllamaToolCall[];
-  };
-  done: boolean;
-}
 
 export interface AgentStreamEvent {
   type: "text" | "status" | "tool_result";
   content: string;
 }
 
+function statusLabelFor(fnName: string): string {
+  if (fnName === "search_web") return "Searching the web...";
+  if (fnName === "query_blog_db") return "Querying blog database...";
+  if (fnName === "query_trading_db") return "Querying trading database...";
+  return `Running ${fnName}...`;
+}
+
+interface OllamaToolCall {
+  function: { name: string; arguments: Record<string, unknown> };
+}
+
 /**
- * Chat with tool calling support for data agent
- * Makes a non-streaming call first to check for tool calls,
- * then streams the final response
+ * Chat with native tool calling. Loops up to MAX_TOOL_ROUNDS times:
+ * 1. Ask model for a response (with tools available).
+ * 2. If model emits tool_calls, execute them and feed results back.
+ * 3. Otherwise, yield the final text and return.
  */
 export async function* chatWithTools(
   messages: ChatMessage[],
   options: ChatOptions = {},
   locationContext?: { city?: string; country?: string }
 ): AsyncGenerator<AgentStreamEvent, void, unknown> {
-  const model = options.model || DEFAULT_MODEL;
+  const model = options.model || CHAT_MODEL;
   const MAX_TOOL_ROUNDS = 3;
-
-  let currentMessages = [...messages];
+  const current: ChatMessage[] = [...messages];
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    // Non-streaming call to check for tool calls
     const response = await fetch(`${OLLAMA_HOST}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model,
-        messages: currentMessages,
+        messages: current,
         tools: DATA_AGENT_TOOLS,
         stream: false,
         options: {
           temperature: options.temperature ?? 0.3,
           num_ctx: options.num_ctx ?? 8192,
         },
-        keep_alive: options.keep_alive ?? "5m",
+        keep_alive: options.keep_alive ?? "30m",
       }),
     });
 
@@ -421,72 +416,45 @@ export async function* chatWithTools(
       throw new Error(`Ollama error: ${response.status} ${response.statusText}`);
     }
 
-    const data: OllamaToolResponse = await response.json();
+    const data = await response.json();
+    const toolCalls: OllamaToolCall[] | undefined = data.message?.tool_calls;
 
-    // Check if model wants to call tools
-    if (data.message?.tool_calls && data.message.tool_calls.length > 0) {
-      // Add assistant's tool call message to history
-      currentMessages.push({
+    if (toolCalls && toolCalls.length > 0) {
+      current.push({
         role: "assistant",
         content: data.message.content || "",
       });
 
-      for (const toolCall of data.message.tool_calls) {
-        const fnName = toolCall.function.name;
-        const args = toolCall.function.arguments;
+      for (const tc of toolCalls) {
+        const fnName = tc.function.name;
+        const args = tc.function.arguments;
 
-        const statusLabel =
-          fnName === "search_web"
-            ? "Searching the web..."
-            : fnName === "query_blog_db"
-              ? "Querying blog database..."
-              : "Querying trading database...";
-
-        yield { type: "status", content: statusLabel };
-
+        yield { type: "status", content: statusLabelFor(fnName) };
         console.log(`[Agent] Tool call: ${fnName}`, JSON.stringify(args));
 
         const result: QueryResult = await handleToolCall(fnName, args, locationContext);
-
-        yield {
-          type: "tool_result",
-          content: JSON.stringify(result),
-        };
+        yield { type: "tool_result", content: JSON.stringify(result) };
 
         console.log(
           `[Agent] Tool result: ${result.success ? result.rowCount + " rows" : result.error}`
         );
 
-        // Add tool result to messages
-        currentMessages.push({
+        current.push({
           role: "tool" as any,
-          content: JSON.stringify(
-            result.success ? result.data : { error: result.error }
-          ),
+          content: JSON.stringify(result.success ? result.data : { error: result.error }),
         });
       }
-
-      // Continue loop - model may need another tool call or will give final answer
       continue;
     }
 
-    // No tool calls - stream the final response
     if (data.message?.content) {
-      // Model already gave a complete response in non-streaming mode
-      // Yield it as text chunks for consistent streaming UX
       yield { type: "text", content: data.message.content };
-      return;
-    }
-
-    // Fallback: stream normally if no content in tool response
-    for await (const chunk of streamChat(currentMessages, options)) {
-      yield { type: "text", content: chunk };
     }
     return;
   }
 
-  // If we exhausted tool rounds, stream a final response
-  for await (const chunk of streamChat(currentMessages, options)) {
+  // Exhausted rounds — stream a final answer from whatever the model can say now.
+  for await (const chunk of streamChat(current, { ...options, model })) {
     yield { type: "text", content: chunk };
   }
 }
@@ -552,9 +520,27 @@ RESPONSE FORMAT:
     prompt += `
 
 DATA AGENT CAPABILITIES:
-You have access to query two databases using SQL tools. When the user asks about blog stats, comments, likes, trades, P&L, positions, portfolio, market data, strategies, or any data question, use the appropriate query tool.
-Write precise, correct SQL. Only use SELECT queries. For TimescaleDB hypertables, use time_bucket() for time-based grouping. All timestamps are in UTC.
-When you receive query results, present them in a clear, human-friendly format using markdown tables or bullet points. Include relevant numbers, percentages, and context.
+You have access to three tools via native function calling. Call them directly when the user asks a question that requires real data — do NOT answer from your own knowledge.
+
+Available tools:
+- query_blog_db — Query the blog database (tables: comments, likes, comment_summaries)
+- query_trading_db — Query the trading database (tables: trades, orders, positions, portfolio_snapshots, strategy_performance, signals, market_data, stock_universe, news_articles, research_reports, day_trades, backtest_runs, backtest_trades)
+- search_web — Search the web for current info (weather, news, prices, events)
+
+When to call a tool:
+- Blog comments / likes / posts / visitors → query_blog_db
+- Trades, P&L, profit, loss, positions, portfolio, orders, signals, strategies, market data, stocks → query_trading_db
+- Weather, news, current events, prices, sports scores, release dates → search_web
+- General knowledge, conversation, explanations, creative tasks → answer directly, no tool
+
+SQL rules:
+- Only SELECT queries. Never INSERT/UPDATE/DELETE/DROP.
+- Always include appropriate WHERE clauses and LIMITs.
+- Use CURRENT_DATE, NOW(), and INTERVAL for date math. All timestamps are UTC.
+- For TimescaleDB hypertables, use time_bucket() for time-based grouping.
+
+After receiving tool results, present them clearly using markdown tables or bullet points. Include relevant numbers, percentages, and context.
+
 ${SCHEMA_CONTEXT}
 ${SQL_EXAMPLES}`;
   }
