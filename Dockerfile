@@ -30,6 +30,9 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/src ./src
 COPY --from=builder /app/package.json ./
 
+# Static assets (CSS, favicon, logo, robots.txt, sitemap.xml)
+COPY public ./public
+
 # Create non-root user
 RUN addgroup -g 1001 -S appgroup && \
     adduser -S appuser -u 1001 -G appgroup
