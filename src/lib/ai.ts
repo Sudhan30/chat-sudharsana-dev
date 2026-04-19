@@ -14,10 +14,11 @@ import {
 const OLLAMA_HOST = process.env.OLLAMA_HOST || "http://localhost:11434";
 const CHAT_MODEL = process.env.OLLAMA_MODEL || "gemma4:latest";
 
-// Standard text-only message
+// Standard text-only message. `tool_calls` / tool role used with native tool calling.
 export interface ChatMessage {
-  role: "user" | "assistant" | "system";
+  role: "user" | "assistant" | "system" | "tool";
   content: string;
+  tool_calls?: Array<{ function: { name: string; arguments: Record<string, unknown> } }>;
 }
 
 // Multimodal message with optional image(s)
@@ -396,7 +397,7 @@ export async function* chatWithTools(
   const current: ChatMessage[] = [...messages];
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const response = await fetch(`${OLLAMA_HOST}/api/chat`, {
+    const toolResponse = await fetch(`${OLLAMA_HOST}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -404,25 +405,29 @@ export async function* chatWithTools(
         messages: current,
         tools: DATA_AGENT_TOOLS,
         stream: false,
+        think: false,
         options: {
           temperature: options.temperature ?? 0.3,
-          num_ctx: options.num_ctx ?? 8192,
+          num_ctx: options.num_ctx ?? 16384,
         },
         keep_alive: options.keep_alive ?? "30m",
       }),
     });
 
-    if (!response.ok) {
-      throw new Error(`Ollama error: ${response.status} ${response.statusText}`);
+    if (!toolResponse.ok) {
+      throw new Error(`Ollama error: ${toolResponse.status} ${toolResponse.statusText}`);
     }
 
-    const data = await response.json();
+    const data = await toolResponse.json();
     const toolCalls: OllamaToolCall[] | undefined = data.message?.tool_calls;
 
     if (toolCalls && toolCalls.length > 0) {
+      // Preserve tool_calls on the assistant message — Ollama needs them in
+      // the history to pair the upcoming tool responses with their calls.
       current.push({
         role: "assistant",
         content: data.message.content || "",
+        tool_calls: toolCalls,
       });
 
       for (const tc of toolCalls) {
@@ -440,11 +445,24 @@ export async function* chatWithTools(
         );
 
         current.push({
-          role: "tool" as any,
+          role: "tool",
           content: JSON.stringify(result.success ? result.data : { error: result.error }),
         });
       }
-      continue;
+
+      // After tools resolve, stream the formatted answer so the user sees
+      // tokens arrive incrementally instead of waiting on a big non-streaming
+      // response. Skip round 2's non-streaming call entirely for this branch.
+      yield { type: "status", content: "Formatting results..." };
+      for await (const chunk of streamChat(current, {
+        ...options,
+        model,
+        num_ctx: options.num_ctx ?? 16384,
+        temperature: options.temperature ?? 0.5,
+      })) {
+        yield { type: "text", content: chunk };
+      }
+      return;
     }
 
     if (data.message?.content) {
@@ -453,7 +471,7 @@ export async function* chatWithTools(
     return;
   }
 
-  // Exhausted rounds — stream a final answer from whatever the model can say now.
+  // Exhausted rounds — stream whatever the model can say now.
   for await (const chunk of streamChat(current, { ...options, model })) {
     yield { type: "text", content: chunk };
   }
