@@ -771,12 +771,13 @@ const renderChat = (user: User, sessions: any[], currentSessionId?: string) => r
               if (data.type === 'meta' && data.search) {
                 ensureBubble();
                 upsertPill(meta, 'search', 'searched web for context');
-              }
-              if (data.type === 'status') {
+              } else if (data.type === 'status') {
                 ensureBubble();
                 upsertPill(meta, 'agent', data.content);
-              }
-              if (data.content) {
+              } else if (data.content) {
+                // Plain content event (no type) — this is actual AI output.
+                // Guard with else-if so status/meta events with a content field
+                // don't double-append into the response body.
                 ensureBubble();
                 fullContent += data.content;
                 content.textContent = fullContent;
