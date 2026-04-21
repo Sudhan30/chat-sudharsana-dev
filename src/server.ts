@@ -113,6 +113,10 @@ const authMiddleware = async (c: any, next: () => Promise<void>) => {
 // HTML Rendering Functions
 // ============================================
 
+// Cache-buster for static assets. Changes every pod restart (each deploy),
+// so Cloudflare can't serve stale CSS/SVG past a deploy.
+const ASSET_VERSION = Date.now().toString(36);
+
 const renderLayout = (content: string, title = "Chat") => {
   const pageTitle = `${title} | chat.sudharsana.dev`;
   const description = "AI-powered chat application with web search, vision capabilities, and intelligent conversation summaries. Built by Sudharsana Rajasekaran.";
@@ -188,8 +192,8 @@ const renderLayout = (content: string, title = "Chat") => {
   }
   </script>
 
-  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/static/design-system.css">
+  <link rel="icon" href="/static/favicon.svg?v=${ASSET_VERSION}" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/design-system.css?v=${ASSET_VERSION}">
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script>
     (function () {
