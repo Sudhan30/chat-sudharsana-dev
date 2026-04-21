@@ -239,7 +239,18 @@ a:hover { color: var(--blue-600); }
   border-left: 3px solid var(--blue-500);
   padding-left: 1rem; margin: 0.75rem 0; color: var(--fg-3);
 }
-.message-content pre { margin: 0.75rem 0; }
+.message-content pre {
+  margin: 0.75rem 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
+}
+.message-content pre code {
+  white-space: inherit;
+  overflow-wrap: inherit;
+  word-break: inherit;
+}
 .message-content table {
   border-collapse: collapse; margin: 0.75rem 0; font-size: 0.95em;
 }
