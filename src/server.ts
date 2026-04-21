@@ -746,10 +746,17 @@ const renderChat = (user: User, sessions: any[], currentSessionId?: string) => r
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
 
-        typingIndicator.style.display = 'none';
-
-        const { row, meta, content } = makeBubbleShell('assistant');
-        messageContainer.appendChild(row);
+        // Keep the typing indicator visible until we get the first event
+        // from the server. Cold-start loads can take ~10s — hiding the
+        // dots the instant the HTTP stream opens makes it look frozen.
+        let row = null, meta = null, content = null;
+        function ensureBubble() {
+          if (row) return;
+          typingIndicator.style.display = 'none';
+          const shell = makeBubbleShell('assistant');
+          row = shell.row; meta = shell.meta; content = shell.content;
+          messageContainer.appendChild(row);
+        }
 
         let fullContent = '';
         while (true) {
@@ -761,9 +768,16 @@ const renderChat = (user: User, sessions: any[], currentSessionId?: string) => r
             if (!line.startsWith('data: ')) continue;
             try {
               const data = JSON.parse(line.slice(6));
-              if (data.type === 'meta' && data.search) upsertPill(meta, 'search', 'searched web for context');
-              if (data.type === 'status') upsertPill(meta, 'agent', data.content);
+              if (data.type === 'meta' && data.search) {
+                ensureBubble();
+                upsertPill(meta, 'search', 'searched web for context');
+              }
+              if (data.type === 'status') {
+                ensureBubble();
+                upsertPill(meta, 'agent', data.content);
+              }
               if (data.content) {
+                ensureBubble();
                 fullContent += data.content;
                 content.textContent = fullContent;
                 scrollToBottom();
@@ -772,7 +786,10 @@ const renderChat = (user: User, sessions: any[], currentSessionId?: string) => r
           }
         }
 
-        if (fullContent && window.marked && marked.parse) {
+        // Stream ended with no events at all — still need to hide the dots.
+        if (!row) typingIndicator.style.display = 'none';
+
+        if (content && fullContent && window.marked && marked.parse) {
           const cleaned = fullContent.replace(/\\n{3,}/g, '\\n\\n').trim();
           content.classList.remove('streaming-text');
           // marked output is trusted assistant content; render as HTML.
