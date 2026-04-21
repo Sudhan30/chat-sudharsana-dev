@@ -1059,7 +1059,14 @@ app.post("/api/chat", authMiddleware, async (c) => {
   // Stream the response.
   return streamSSE(c, async (stream) => {
     let fullContent = "";
+    let eventCount = 0;
     console.log(`[Chat] Starting stream for session ${sessionId}, hasImage=${hasImage}`);
+
+    // Immediately flush a keep-alive comment so the client sees something
+    // on the wire right away. This also forces early chunk emission in case
+    // Bun / Hono batch the first write.
+    await stream.writeSSE({ event: "open", data: JSON.stringify({ ok: true }) });
+    console.log(`[Chat] wrote initial 'open' event`);
 
     try {
       if (hasImage) {
@@ -1100,9 +1107,11 @@ app.post("/api/chat", authMiddleware, async (c) => {
           ? { city: locationContext.city, country: locationContext.country }
           : undefined;
 
+        console.log(`[Chat] entering chatWithTools for ${sessionId}`);
         for await (const event of chatWithTools(messages, {}, searchLocation)) {
+          eventCount++;
+          console.log(`[Chat] event #${eventCount} type=${event.type} len=${event.content?.length ?? 0}`);
           if (event.type === "status") {
-            // Send status indicator to client (e.g., "Querying database...")
             await stream.writeSSE({
               data: JSON.stringify({
                 type: "status",
@@ -1116,22 +1125,28 @@ app.post("/api/chat", authMiddleware, async (c) => {
               data: JSON.stringify({ content: event.content, done: false }),
             });
           }
-          // tool_result events are internal - not sent to client
         }
+        console.log(`[Chat] chatWithTools complete; events=${eventCount}, fullContent.length=${fullContent.length}`);
       }
 
-      // Save assistant message
+      console.log(`[Chat] saving assistant message to DB`);
       await createMessage(sessionId, "assistant", fullContent);
 
+      console.log(`[Chat] writing final done event`);
       await stream.writeSSE({
         data: JSON.stringify({ content: "", done: true }),
       });
+      console.log(`[Chat] stream handler returning normally for ${sessionId}`);
     } catch (error) {
-      console.error("Stream error:", error);
-      console.error("Stream error stack:", error instanceof Error ? error.stack : "no stack");
-      await stream.writeSSE({
-        data: JSON.stringify({ error: String(error), done: true }),
-      });
+      console.error("[Chat] Stream error:", error);
+      console.error("[Chat] Stream error stack:", error instanceof Error ? error.stack : "no stack");
+      try {
+        await stream.writeSSE({
+          data: JSON.stringify({ error: String(error), done: true }),
+        });
+      } catch (e2) {
+        console.error("[Chat] Error while writing error event:", e2);
+      }
     }
   });
 });
