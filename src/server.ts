@@ -1057,12 +1057,6 @@ app.post("/api/chat", authMiddleware, async (c) => {
   }
 
   // Stream the response.
-  // X-Accel-Buffering: no is required to stop Cloudflare / nginx / Traefik
-  // from buffering SSE. Without this header, tokens accumulate in the proxy
-  // and the browser receives the whole response at once (or not at all until
-  // the connection closes), which makes the chat look frozen.
-  c.header("X-Accel-Buffering", "no");
-  c.header("Cache-Control", "no-cache, no-transform");
   return streamSSE(c, async (stream) => {
     let fullContent = "";
     console.log(`[Chat] Starting stream for session ${sessionId}, hasImage=${hasImage}`);
@@ -1213,6 +1207,22 @@ function renderAdminResult(status: "success" | "error", message: string): string
 // ============================================
 // Health Check
 // ============================================
+
+// DIAG: minimal SSE endpoint — no auth, no DB, no Ollama.
+// Streams "tick N" every 500ms, five times, then "done". Lets us isolate
+// whether SSE transport itself is broken vs something in /api/chat.
+app.get("/diag/sse", (c) => {
+  return streamSSE(c, async (stream) => {
+    console.log("[diag/sse] stream open");
+    for (let i = 1; i <= 5; i++) {
+      await stream.writeSSE({ data: JSON.stringify({ tick: i }) });
+      console.log("[diag/sse] wrote tick", i);
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    await stream.writeSSE({ data: JSON.stringify({ done: true }) });
+    console.log("[diag/sse] stream complete");
+  });
+});
 
 app.get("/health", async (c) => {
   const dbOk = await healthCheck();
