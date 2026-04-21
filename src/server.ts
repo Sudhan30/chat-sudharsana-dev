@@ -772,7 +772,13 @@ const renderChat = (user: User, sessions: any[], currentSessionId?: string) => r
             if (!line.startsWith('data: ')) continue;
             try {
               const data = JSON.parse(line.slice(6));
-              if (data.type === 'meta' && data.search) {
+              if (data.error) {
+                // Server-side error — show a dim red error inside the bubble
+                // instead of silently dropping the event.
+                ensureBubble();
+                content.textContent = 'Something went wrong: ' + data.error + ' — please retry.';
+                content.style.color = 'var(--red-500)';
+              } else if (data.type === 'meta' && data.search) {
                 ensureBubble();
                 upsertPill(meta, 'search', 'searched web for context');
               } else if (data.type === 'status') {

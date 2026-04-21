@@ -123,6 +123,25 @@ export const DATA_AGENT_TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "get_k8s_pods",
+      description:
+        "Query Kubernetes pod status from the suddu-server K3s cluster. Returns pod name, namespace, phase (Running/Pending/Failed/Succeeded), ready count, restart count, and age. Use this when the user asks about: pods, cluster health, what's running, service status, 'is X running', node status, infrastructure state, or any Kubernetes-related question.",
+      parameters: {
+        type: "object",
+        properties: {
+          namespace: {
+            type: "string",
+            description:
+              "Kubernetes namespace to filter by. Use 'all' for all namespaces. Common values: 'web' (blog/chat/backend), 'trading' (trading system), 'monitoring', 'flux-system'.",
+          },
+        },
+        required: ["namespace"],
+      },
+    },
+  },
 ];
 
 // ============================================
@@ -259,6 +278,11 @@ export async function handleToolCall(
     }
   }
 
+  if (toolName === "get_k8s_pods") {
+    const namespace = (args.namespace as string) || "all";
+    return getK8sPods(namespace);
+  }
+
   const sql = args.sql as string;
   if (!sql) {
     return { success: false, error: "No SQL query provided" };
@@ -271,6 +295,92 @@ export async function handleToolCall(
   }
 
   return { success: false, error: `Unknown tool: ${toolName}` };
+}
+
+// ============================================
+// Kubernetes Tool
+// ============================================
+// Uses the in-cluster ServiceAccount credentials to read pod status.
+// Requires: deployment uses a SA bound to a ClusterRole with pods get/list.
+
+const K8S_API = "https://kubernetes.default.svc";
+const K8S_TOKEN_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/token";
+const K8S_CA_PATH = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt";
+
+interface K8sPod {
+  metadata: { name: string; namespace: string; creationTimestamp: string };
+  spec: { containers: Array<{ name: string }> };
+  status: {
+    phase: string;
+    startTime?: string;
+    containerStatuses?: Array<{ ready: boolean; restartCount: number }>;
+  };
+}
+
+async function getK8sPods(namespace: string): Promise<QueryResult> {
+  let token: string;
+  let ca: string;
+  try {
+    token = await Bun.file(K8S_TOKEN_PATH).text();
+    ca = await Bun.file(K8S_CA_PATH).text();
+  } catch {
+    return {
+      success: false,
+      error: "Kubernetes service account token not mounted. Chat pod may not have RBAC configured.",
+    };
+  }
+
+  const url =
+    namespace === "all"
+      ? `${K8S_API}/api/v1/pods`
+      : `${K8S_API}/api/v1/namespaces/${encodeURIComponent(namespace)}/pods`;
+
+  try {
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token.trim()}` },
+      tls: { ca } as any,
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      return {
+        success: false,
+        error: `Kubernetes API returned ${response.status}: ${body.slice(0, 200)}`,
+      };
+    }
+
+    const data = (await response.json()) as { items: K8sPod[] };
+    const now = Date.now();
+    const rows = data.items.map((p) => {
+      const containerStatuses = p.status.containerStatuses || [];
+      const readyCount = containerStatuses.filter((c) => c.ready).length;
+      const totalContainers = p.spec.containers?.length ?? 0;
+      const restartCount = containerStatuses.reduce((a, c) => a + c.restartCount, 0);
+      const startTime = p.status.startTime || p.metadata.creationTimestamp;
+      const ageSeconds = Math.floor((now - new Date(startTime).getTime()) / 1000);
+      const ageHuman = formatAge(ageSeconds);
+      return {
+        namespace: p.metadata.namespace,
+        name: p.metadata.name,
+        phase: p.status.phase,
+        ready: `${readyCount}/${totalContainers}`,
+        restarts: restartCount,
+        age: ageHuman,
+      };
+    });
+
+    return { success: true, data: rows, rowCount: rows.length };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { success: false, error: `Kubernetes fetch failed: ${message}` };
+  }
+}
+
+function formatAge(s: number): string {
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
 }
 
 // ============================================

@@ -379,6 +379,7 @@ function statusLabelFor(fnName: string): string {
   if (fnName === "search_web") return "Searching the web...";
   if (fnName === "query_blog_db") return "Querying blog database...";
   if (fnName === "query_trading_db") return "Querying trading database...";
+  if (fnName === "get_k8s_pods") return "Checking Kubernetes pods...";
   return `Running ${fnName}...`;
 }
 
@@ -550,11 +551,13 @@ Available tools:
 - query_blog_db — Query the blog database (tables: comments, likes, comment_summaries)
 - query_trading_db — Query the trading database (tables: trades, orders, positions, portfolio_snapshots, strategy_performance, signals, market_data, stock_universe, news_articles, research_reports, day_trades, backtest_runs, backtest_trades)
 - search_web — Search the web for current info (weather, news, prices, events)
+- get_k8s_pods — Query Kubernetes pod status on the suddu-server cluster. Namespaces: web (blog/chat/backend/postgres/redis/ollama/gotify/grafana), trading (timescaledb/redis/algo trading), orchestrator (dagster), monitoring, flux-system. Use namespace="all" for everything.
 
 When to call a tool:
 - Blog comments / likes / posts / visitors → query_blog_db
 - Trades, P&L, profit, loss, positions, portfolio, orders, signals, strategies, market data, stocks → query_trading_db
 - Weather, news, current events, prices, sports scores, release dates → search_web
+- Kubernetes / pods / cluster / infra / "is X running" / "are my services up" / node status / deployment health → get_k8s_pods
 - General knowledge, conversation, explanations, creative tasks → answer directly, no tool
 
 SQL rules:
