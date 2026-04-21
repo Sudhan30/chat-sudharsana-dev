@@ -81,7 +81,7 @@ export async function* streamChat(
         temperature: options.temperature ?? 0.7,
         num_ctx: options.num_ctx ?? 4096,
       },
-      keep_alive: options.keep_alive ?? "5m",
+      keep_alive: options.keep_alive ?? "30m",
     }),
   });
 
@@ -167,7 +167,7 @@ export async function chat(
         temperature: options.temperature ?? 0.7,
         num_ctx: options.num_ctx ?? 4096,
       },
-      keep_alive: options.keep_alive ?? "5m",
+      keep_alive: options.keep_alive ?? "30m",
     }),
   });
 
@@ -298,7 +298,7 @@ export async function* streamChatWithVision(
         temperature: options.temperature ?? 0.7,
         num_ctx: options.num_ctx ?? 4096,
       },
-      keep_alive: options.keep_alive ?? "5m",
+      keep_alive: options.keep_alive ?? "30m",
     }),
   });
 
@@ -556,6 +556,8 @@ SQL rules:
 - Always include appropriate WHERE clauses and LIMITs.
 - Use CURRENT_DATE, NOW(), and INTERVAL for date math. All timestamps are UTC.
 - For TimescaleDB hypertables, use time_bucket() for time-based grouping.
+
+IMPORTANT — NEVER ask a clarifying question on a data request. If the user asks about "my trades", "my positions", "my P&L", "my blog comments", etc., call the appropriate tool immediately with a reasonable default (e.g. 10 most recent rows, or current open positions, or today's data). If the user's intent is genuinely ambiguous, make your best guess, show the results, and THEN offer to refine. Showing data beats asking questions.
 
 After receiving tool results, present them clearly using markdown tables or bullet points. Include relevant numbers, percentages, and context.
 
