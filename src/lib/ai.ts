@@ -55,6 +55,7 @@ export interface ChatOptions {
   model?: string;
   temperature?: number;
   num_ctx?: number;
+  num_predict?: number;
   keep_alive?: string;
 }
 
@@ -80,6 +81,7 @@ export async function* streamChat(
       options: {
         temperature: options.temperature ?? 0.7,
         num_ctx: options.num_ctx ?? 4096,
+        num_predict: options.num_predict ?? -1,
       },
       keep_alive: options.keep_alive ?? "30m",
     }),
@@ -113,13 +115,14 @@ export async function* streamChat(
         if (!line.trim()) continue;
 
         try {
-          const chunk: OllamaStreamChunk = JSON.parse(line);
+          const chunk: any = JSON.parse(line);
 
           if (chunk.message?.content) {
             yield chunk.message.content;
           }
 
           if (chunk.done) {
+            console.log(`[streamChat] done_reason=${chunk.done_reason} eval_count=${chunk.eval_count} prompt_eval_count=${chunk.prompt_eval_count}`);
             return;
           }
         } catch (e) {
@@ -166,6 +169,7 @@ export async function chat(
       options: {
         temperature: options.temperature ?? 0.7,
         num_ctx: options.num_ctx ?? 4096,
+        num_predict: options.num_predict ?? -1,
       },
       keep_alive: options.keep_alive ?? "30m",
     }),
@@ -297,6 +301,7 @@ export async function* streamChatWithVision(
       options: {
         temperature: options.temperature ?? 0.7,
         num_ctx: options.num_ctx ?? 4096,
+        num_predict: options.num_predict ?? -1,
       },
       keep_alive: options.keep_alive ?? "30m",
     }),
@@ -409,6 +414,7 @@ export async function* chatWithTools(
         options: {
           temperature: options.temperature ?? 0.3,
           num_ctx: options.num_ctx ?? 16384,
+          num_predict: options.num_predict ?? -1,
         },
         keep_alive: options.keep_alive ?? "30m",
       }),
