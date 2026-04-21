@@ -1056,7 +1056,13 @@ app.post("/api/chat", authMiddleware, async (c) => {
     });
   }
 
-  // Stream the response
+  // Stream the response.
+  // X-Accel-Buffering: no is required to stop Cloudflare / nginx / Traefik
+  // from buffering SSE. Without this header, tokens accumulate in the proxy
+  // and the browser receives the whole response at once (or not at all until
+  // the connection closes), which makes the chat look frozen.
+  c.header("X-Accel-Buffering", "no");
+  c.header("Cache-Control", "no-cache, no-transform");
   return streamSSE(c, async (stream) => {
     let fullContent = "";
     console.log(`[Chat] Starting stream for session ${sessionId}, hasImage=${hasImage}`);
