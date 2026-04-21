@@ -1282,4 +1282,10 @@ process.on("SIGTERM", async () => {
 export default {
   port,
   fetch: app.fetch,
+  // Bun's default idleTimeout is 10s. Ollama responses can take 10-30s
+  // (especially cold start on the iGPU), during which the SSE stream
+  // has no writes. Without this, Bun resets the connection mid-response
+  // with ECONNRESET — the root cause of the "I have to refresh to see
+  // the content" bug.
+  idleTimeout: 255, // seconds (max allowed by Bun is 255)
 };
